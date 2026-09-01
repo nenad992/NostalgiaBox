@@ -275,6 +275,7 @@ class TVApp:
         """Tune into the currently selected channel."""
         channel = self.lineup.current
         self.overlay.clear_standby()
+        self.overlay.clear_message()
 
         request = channel.tune_in()
         self._pending_banner = None
@@ -326,9 +327,7 @@ class TVApp:
             self.player.play_loop(self._colorbars_path)
         else:
             self.player.stop()
-        self.overlay.show_message(
-            f"CH {channel.number:02d}  {channel.name}  -  NO SIGNAL", duration=6.0
-        )
+        self.overlay.show_message(self.config.empty_channel_message, duration=0)
 
     # -- volume -------------------------------------------------------------
     def _volume_up(self) -> None:

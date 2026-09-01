@@ -13,11 +13,13 @@ provides the up/down/by-number navigation a remote needs.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import random
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 from typing import AbstractSet, Dict, List, Optional, Sequence
 
@@ -148,6 +150,39 @@ class BroadcastSchedule:
         return PlayRequest(path=self._episodes[-1], start=0.0)
 
 
+def deal_episodes(
+    episodes: Sequence[Path],
+    n_channels: int,
+    rng: random.Random,
+) -> List[List[Path]]:
+    """Shuffle ``episodes`` and deal round-robin so each file hits one channel.
+
+    Extra channels beyond the library size get an empty list. After this deal
+    is exhausted (next day / new seed), shuffle again so files can move.
+    """
+    if n_channels < 1:
+        raise ValueError("n_channels must be >= 1")
+    items = list(episodes)
+    rng.shuffle(items)
+    buckets: List[List[Path]] = [[] for _ in range(n_channels)]
+    for i, episode in enumerate(items):
+        buckets[i % n_channels].append(episode)
+    return buckets
+
+
+def mixed_deal_seed(shuffle_seed: Optional[int], day_iso: str) -> int:
+    """Stable 31-bit seed so the same day + config yields the same deal."""
+    material = f"{shuffle_seed!s}|{day_iso}|mixed-deal".encode()
+    return int.from_bytes(hashlib.sha256(material).digest()[:8], "big") % (2**31)
+
+
+def start_of_local_day(when: Optional[float] = None) -> float:
+    """Unix timestamp of local midnight (broadcast clock epoch)."""
+    ts = time.time() if when is None else when
+    dt = datetime.fromtimestamp(ts)
+    return dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+
 class Channel:
     """A single TV channel backed by a folder of episodes."""
 
@@ -160,6 +195,7 @@ class Channel:
         start_offset_min: float = 0.0,
         start_offset_max: Optional[float] = None,
         rng: Optional[random.Random] = None,
+        broadcast_epoch: Optional[float] = None,
     ) -> None:
         self.config = config
         self.episodes: List[Path] = list(episodes)
@@ -174,6 +210,7 @@ class Channel:
             else max(self.start_offset_min, start_offset_max)
         )
         self._rng = rng or random.Random()
+        self._broadcast_epoch = broadcast_epoch
         self._bag: Optional[ShuffleBag[Path]] = (
             ShuffleBag(self.episodes, self._rng) if self.episodes else None
         )
@@ -245,14 +282,13 @@ class Channel:
             return self._broadcast
         if self.is_empty:
             return None
+        use_epoch = self._broadcast_epoch if self._broadcast_epoch is not None else epoch
         durations: List[float] = []
         for path in self.episodes:
             dur = probe_duration(path)
             durations.append(dur if dur else DEFAULT_EPISODE_SECONDS)
-        # Use a channel-stable epoch offset so different channels are out of
-        # phase with each other, but keep it deterministic per run.
         self._broadcast = BroadcastSchedule(
-            self.episodes, durations, epoch=epoch, rng=self._rng
+            self.episodes, durations, epoch=use_epoch, rng=self._rng
         )
         return self._broadcast
 
@@ -311,11 +347,28 @@ class ChannelLineup:
         return self.current
 
 
-def build_lineup(config: Config, *, rng: Optional[random.Random] = None) -> ChannelLineup:
-    """Scan every configured channel folder and build the full lineup."""
-    base_rng = rng or random.Random(config.shuffle_seed)
+def build_lineup(
+    config: Config,
+    *,
+    rng: Optional[random.Random] = None,
+    today: Optional[date] = None,
+) -> ChannelLineup:
+    """Scan configured folders / deal the mixed pool and build the lineup."""
+    today = today or date.today()
+    deal_rng = rng or random.Random(
+        mixed_deal_seed(config.shuffle_seed, today.isoformat())
+    )
+    broadcast_epoch = (
+        start_of_local_day() if config.tune_in == "broadcast" else None
+    )
+
+    dedicated_cfgs = [c for c in config.channels if not c.from_pool]
+    pool_cfgs = [c for c in config.channels if c.from_pool]
+
     channels: List[Channel] = []
-    for i, ch_cfg in enumerate(config.channels):
+    dedicated_files: set[Path] = set()
+
+    for i, ch_cfg in enumerate(dedicated_cfgs):
         episodes = scan_episodes(
             ch_cfg.path,
             config.video_extensions,
@@ -323,29 +376,72 @@ def build_lineup(config: Config, *, rng: Optional[random.Random] = None) -> Chan
             exclude=ch_cfg.exclude,
             exclude_seasons=ch_cfg.exclude_seasons,
         )
+        dedicated_files.update(p.resolve() for p in episodes)
         if not episodes:
             log.warning(
                 "channel %s (%s) has no playable episodes in %s",
                 ch_cfg.number, ch_cfg.name, ch_cfg.path,
             )
-        # Give each channel its own RNG stream so they shuffle independently
-        # but reproducibly when a seed is configured.
-        if config.shuffle_seed is not None:
-            # Derive a distinct-but-deterministic integer seed per channel.
-            ch_rng = random.Random(hash((config.shuffle_seed, ch_cfg.number, i)) & 0xFFFFFFFF)
-        else:
-            ch_rng = random.Random()
         channels.append(
-            Channel(
-                ch_cfg,
-                episodes,
-                tune_in=config.tune_in,
-                start_offset_min=config.start_offset_min,
-                start_offset_max=config.start_offset_max,
-                rng=ch_rng,
+            _make_channel(
+                config, ch_cfg, episodes, index=i, broadcast_epoch=broadcast_epoch
             )
         )
+
+    if pool_cfgs:
+        pool_root = config.mixed.path if config.mixed is not None else pool_cfgs[0].path
+        pool = [
+            p
+            for p in scan_episodes(
+                pool_root,
+                config.video_extensions,
+                recursive=config.scan_recursive,
+            )
+            if p.resolve() not in dedicated_files
+        ]
+        dealt = deal_episodes(pool, len(pool_cfgs), deal_rng)
+        for i, (ch_cfg, episodes) in enumerate(zip(pool_cfgs, dealt)):
+            if not episodes:
+                log.info(
+                    "channel %s (%s) has no cartoons in today's deal",
+                    ch_cfg.number, ch_cfg.name,
+                )
+            channels.append(
+                _make_channel(
+                    config,
+                    ch_cfg,
+                    episodes,
+                    index=1000 + i,
+                    broadcast_epoch=broadcast_epoch,
+                )
+            )
+
     return ChannelLineup(channels)
+
+
+def _make_channel(
+    config: Config,
+    ch_cfg,
+    episodes: Sequence[Path],
+    *,
+    index: int,
+    broadcast_epoch: Optional[float],
+) -> Channel:
+    if config.shuffle_seed is not None:
+        ch_rng = random.Random(
+            hash((config.shuffle_seed, ch_cfg.number, index)) & 0xFFFFFFFF
+        )
+    else:
+        ch_rng = random.Random()
+    return Channel(
+        ch_cfg,
+        episodes,
+        tune_in=config.tune_in,
+        start_offset_min=config.start_offset_min,
+        start_offset_max=config.start_offset_max,
+        rng=ch_rng,
+        broadcast_epoch=broadcast_epoch,
+    )
 
 
 __all__ = [
@@ -355,5 +451,8 @@ __all__ = [
     "BroadcastSchedule",
     "scan_episodes",
     "detect_season",
+    "deal_episodes",
+    "mixed_deal_seed",
+    "start_of_local_day",
     "build_lineup",
 ]

@@ -198,6 +198,74 @@ def test_lineup_navigation(tmp_path):
     assert lineup.has_number(7)
 
 
+def test_deal_episodes_unique_until_pool_exhausted():
+    from pathlib import Path
+
+    from nostalgiabox.channel import deal_episodes
+
+    eps = [Path(f"v{i}.mp4") for i in range(4)]
+    buckets = deal_episodes(eps, 10, random.Random(0))
+    assert len(buckets) == 10
+    assigned = [p for bucket in buckets for p in bucket]
+    assert len(assigned) == 4
+    assert len(set(assigned)) == 4
+    assert sum(1 for b in buckets if not b) == 6
+
+
+def test_deal_round_robin_spreads_overflow():
+    from pathlib import Path
+
+    from nostalgiabox.channel import deal_episodes
+
+    eps = [Path(f"v{i}.mp4") for i in range(25)]
+    buckets = deal_episodes(eps, 10, random.Random(1))
+    sizes = [len(b) for b in buckets]
+    assert sorted(sizes)[-1] - sorted(sizes)[0] <= 1
+    flat = [p for b in buckets for p in b]
+    assert len(set(flat)) == 25
+
+
+def test_mixed_pool_lineup(tmp_path):
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    for i in range(4):
+        (pool / f"ep{i}.mp4").write_bytes(b"x")
+    arthur = make_show(tmp_path, "arthur", 2)
+    cfg = config_from_dict(
+        {
+            "shuffle_seed": 7,
+            "mixed": {"path": str(pool), "count": 10, "first_number": 1},
+            "channels": [
+                {"number": 11, "name": "Arthur", "path": str(arthur)},
+            ],
+        }
+    )
+    lineup = build_lineup(cfg, rng=random.Random(0), today=__import__("datetime").date(2026, 9, 1))
+    assert len(lineup) == 11
+    mixed = [c for c in lineup if c.number <= 10]
+    dedicated = [c for c in lineup if c.number == 11]
+    assert len(mixed) == 10
+    assert len(dedicated[0].episodes) == 2
+    mixed_files = [p.name for c in mixed for p in c.episodes]
+    assert len(mixed_files) == 4
+    assert len(set(mixed_files)) == 4
+    assert sum(1 for c in mixed if c.is_empty) == 6
+
+
+def test_same_day_deal_is_stable(tmp_path):
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    for i in range(8):
+        (pool / f"ep{i}.mp4").write_bytes(b"x")
+    data = {"shuffle_seed": 3, "mixed": {"path": str(pool), "count": 10}}
+    day = __import__("datetime").date(2026, 1, 15)
+    a = build_lineup(config_from_dict(data), today=day)
+    b = build_lineup(config_from_dict(data), today=day)
+    names_a = [[p.name for p in c.episodes] for c in a]
+    names_b = [[p.name for p in c.episodes] for c in b]
+    assert names_a == names_b
+
+
 def test_lineup_sorted_by_number(tmp_path):
     for n in ("a", "b"):
         make_show(tmp_path, n, 1)

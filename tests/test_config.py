@@ -66,7 +66,7 @@ def test_duplicate_channel_numbers_rejected(tmp_path):
 
 
 def test_missing_channels_and_media_root():
-    with pytest.raises(ConfigError, match="either 'channels' or 'media_root'"):
+    with pytest.raises(ConfigError, match="mixed"):
         config_from_dict({})
 
 
@@ -114,6 +114,7 @@ def test_ui_and_crt_defaults(tmp_path):
     assert cfg.transition_duration == 0.4
     assert cfg.bridge_seconds == 0.8
     assert cfg.fullscreen is True  # Pi / TV default; Tilt sets false
+    assert cfg.empty_channel_message == "Ovaj kanal nema danas crtaća"
 
 
 def test_fullscreen_override(tmp_path):

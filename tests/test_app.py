@@ -265,7 +265,26 @@ def test_empty_channel_shows_no_signal(tmp_path):
     )
     app = TVApp(config, MockPlayer(), InputManager([]), clock=FakeClock())
     app.start()  # starts on ch 2 which is empty
-    assert "NO SIGNAL" in app.player.overlays.get(4, "")
+    assert "Ovaj kanal nema danas crtaća" in app.player.overlays.get(4, "")
+
+
+def test_empty_channel_message_clears_when_leaving(tmp_path):
+    (tmp_path / "dragon").mkdir()
+    make_show(tmp_path, "arthur", 2)
+    config = config_from_dict(
+        {
+            "channels": [
+                {"number": 2, "name": "Dragon Tales", "path": str(tmp_path / "dragon")},
+                {"number": 3, "name": "Arthur", "path": str(tmp_path / "arthur")},
+            ],
+            "bridge_seconds": 0,
+        }
+    )
+    app = TVApp(config, MockPlayer(), InputManager([]), clock=FakeClock())
+    app.start()
+    send(app, Action.CHANNEL_UP)
+    assert "Ovaj kanal nema danas crtaća" not in app.player.overlays.get(4, "")
+    assert 4 not in app.player.overlays
 
 
 def test_channel_banner_deferred_until_switch(tmp_path):

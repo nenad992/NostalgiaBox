@@ -1,14 +1,16 @@
-# Config used only by `tilt up` on a development machine.
-# The Raspberry Pi still uses config.yaml (from config.example.yaml).
-#
-# Put one folder per channel under media_root, with real video files inside:
-#   dev/media/Dragon Tales/S01E01.mp4
+# Local Tilt — same mixed-channel behaviour as the Pi, different paths.
 
-media_root: dev/media
-first_channel_number: 2
+mixed:
+  path: dev/media/Sample Channel
+  count: 10
+  first_number: 1
+  name_prefix: Kanal
 
-tune_in: random
-start_offset: [6, 10]
+empty_channel_message: "Ovaj kanal nema danas crtaća"
+
+tune_in: broadcast
+start_offset: 0
+start_channel: 1
 transition: none
 bridge_seconds: 0.8
 

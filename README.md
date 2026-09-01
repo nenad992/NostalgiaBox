@@ -340,8 +340,12 @@ on the device works. It runs the same app in a window on your computer.
 
 1. Install [Tilt](https://docs.tilt.dev/install.html) and mpv (`brew install tilt mpv` on a Mac).
 2. `python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev,local]"`
-3. Put real episodes in `dev/media/<show name>/` (one folder per channel).
-4. Run `tilt up` and open the Tilt UI. An **mpv window** is the TV; Tilt buttons are the remote (CH+, volume, mute, …).
+3. Put real episodes in `dev/media/Sample Channel/` (one shared pool for 10 mixed channels).
+4. Run `tilt up`. Restart the `tv` resource after adding files. Use CH+ / CH−; empty channels show **Ovaj kanal nema danas crtaća**.
+
+On the Pi, copy `config.example.yaml` to `config.yaml` and set `mixed.path` to
+your pool folder (same 10-channel deal and broadcast clock as Tilt). Optional
+dedicated shows use `channels:` with numbers 11+.
 
 If mpv / `python-mpv` is missing, the `tv` resource in Tilt will fail until you install them. Empty dummy `.mp4` files are detected as episodes but will not show a picture.
 

@@ -102,6 +102,11 @@ class OverlayManager:
         self._player.clear_overlay(_ID_STANDBY)
         self._expiry.pop(_ID_STANDBY, None)
 
+    def clear_message(self) -> None:
+        """Drop the persistent empty-channel / status line."""
+        self._player.clear_overlay(_ID_MESSAGE)
+        self._expiry.pop(_ID_MESSAGE, None)
+
     def tick(self) -> None:
         """Clear any overlays whose time is up. Call this every loop iteration."""
         now = self._clock()

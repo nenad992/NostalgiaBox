@@ -78,12 +78,25 @@ class ChannelConfig:
     # a set of season numbers detected from the path (e.g. S06E01, "Season 6").
     exclude: tuple[str, ...] = ()
     exclude_seasons: frozenset[int] = frozenset()
+    # True for mixed-pool slots: build_lineup assigns unique files from mixed.path
+    # instead of scanning this path as its own library.
+    from_pool: bool = False
 
     def __post_init__(self) -> None:
         if self.number < 0:
             raise ConfigError(f"channel number must be >= 0, got {self.number}")
         if not self.name:
             raise ConfigError(f"channel {self.number} is missing a name")
+
+
+@dataclass(frozen=True)
+class MixedPoolConfig:
+    """One folder of videos dealt uniquely across ``count`` mixed channels."""
+
+    path: Path
+    count: int = 10
+    first_number: int = 1
+    name_prefix: str = "Kanal"
 
 
 @dataclass(frozen=True)
@@ -134,6 +147,9 @@ class Config:
 
     # mpv window: True on a Pi/TV; set false for a windowed laptop / Tilt loop.
     fullscreen: bool = True
+
+    mixed: Optional[MixedPoolConfig] = None
+    empty_channel_message: str = "Ovaj kanal nema danas crtaća"
 
     def channel_numbers(self) -> List[int]:
         return [c.number for c in self.channels]
@@ -187,6 +203,47 @@ def _prettify_name(folder_name: str) -> str:
     cleaned = folder_name.replace("_", " ").replace("-", " ").strip()
     cleaned = " ".join(cleaned.split())
     return cleaned.title() if cleaned.islower() else cleaned
+
+
+def _parse_mixed(raw: Any, base_dir: Optional[Path]) -> Optional[MixedPoolConfig]:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ConfigError("'mixed' must be a mapping")
+    if "path" not in raw:
+        raise ConfigError("'mixed' is missing required key 'path'")
+    count = _clamp_int(raw.get("count", 10), 1, 99, "mixed.count")
+    first = _clamp_int(raw.get("first_number", 1), 0, 999, "mixed.first_number")
+    prefix = str(raw.get("name_prefix", "Kanal")).strip() or "Kanal"
+    return MixedPoolConfig(
+        path=_as_path(raw["path"], base_dir),
+        count=count,
+        first_number=first,
+        name_prefix=prefix,
+    )
+
+
+def _mixed_channel_stubs(
+    mixed: MixedPoolConfig, *, occupied: set[int]
+) -> List[ChannelConfig]:
+    stubs: List[ChannelConfig] = []
+    number = mixed.first_number
+    index = 1
+    while len(stubs) < mixed.count:
+        if number not in occupied:
+            stubs.append(
+                ChannelConfig(
+                    number=number,
+                    name=f"{mixed.name_prefix} {index}",
+                    path=mixed.path,
+                    from_pool=True,
+                )
+            )
+            index += 1
+        number += 1
+        if number > mixed.first_number + mixed.count + len(occupied) + 50:
+            raise ConfigError("could not allocate mixed channel numbers")
+    return stubs
 
 
 def _parse_channels(raw: Any, base: Optional[Path], default_shuffle: bool) -> List[ChannelConfig]:
@@ -268,17 +325,26 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
 
     media_root_raw = data.get("media_root")
     media_root = _as_path(media_root_raw, base_dir) if media_root_raw else None
+    mixed = _parse_mixed(data.get("mixed"), base_dir)
 
+    dedicated: List[ChannelConfig] = []
     if "channels" in data:
-        channels = _parse_channels(data["channels"], media_root or base_dir, default_shuffle)
-    elif media_root is not None:
-        channels = _discover_channels(
+        dedicated = _parse_channels(data["channels"], media_root or base_dir, default_shuffle)
+    elif media_root is not None and mixed is None:
+        dedicated = _discover_channels(
             media_root,
             start_number=int(data.get("first_channel_number", 2)),
             default_shuffle=default_shuffle,
         )
-    else:
-        raise ConfigError("configuration must define either 'channels' or 'media_root'")
+
+    channels = list(dedicated)
+    if mixed is not None:
+        channels.extend(_mixed_channel_stubs(mixed, occupied={c.number for c in dedicated}))
+
+    if not channels:
+        raise ConfigError(
+            "configuration must define 'mixed', 'channels', or 'media_root'"
+        )
 
     if not channels:
         raise ConfigError("no channels found - check 'channels' or the folders under 'media_root'")
@@ -333,6 +399,10 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
         assets_dir=assets_dir,
         input_options=dict(data.get("input") or {}),
         fullscreen=bool(data.get("fullscreen", True)),
+        mixed=mixed,
+        empty_channel_message=str(
+            data.get("empty_channel_message", "Ovaj kanal nema danas crtaća")
+        ),
     )
 
 
@@ -454,6 +524,7 @@ __all__ = [
     "ChannelConfig",
     "UiConfig",
     "CrtConfig",
+    "MixedPoolConfig",
     "ConfigError",
     "load_config",
     "config_from_dict",
