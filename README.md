@@ -164,10 +164,44 @@ This lists your channels and how many episodes it found in each. (You can also
 leave out specific seasons/specials per channel — see `exclude_seasons` and
 `exclude` in the example config.)
 
-### Part G — Program the remote (Flirc)
+### Part G — TV remote over HDMI-CEC (no extra remote)
 
-The **Flirc** adapter learns your Simple TV Remote and turns its buttons into
-keys NostalgiaBox understands. Do this **on your computer**:
+The Pi already listens for the **TV's own remote** over HDMI-CEC (`cec-utils`
+is installed by `scripts/install.sh`). NostalgiaBox registers as a playback
+device named **NostalgiaBox** and claims **active source** so the TV sends
+keys to the Pi instead of ignoring them.
+
+1. Use the Pi 4 HDMI port **nearest the USB-C power** (HDMI0).
+2. On the TV, turn **CEC on**. Names differ: Anynet+ (Samsung), SimpLink (LG),
+   BRAVIA Sync (Sony), HDMI-CEC / EasyLink / VIERA Link, etc.
+3. Select that HDMI input. The TV may list **NostalgiaBox** as an HDMI device.
+4. Point the **TV remote** at the TV:
+
+   | TV remote | NostalgiaBox |
+   |-----------|----------------|
+   | Up / Channel+ | Channel up |
+   | Down / Channel− | Channel down |
+   | Right / Volume+ | Box volume up |
+   | Left / Volume− | Box volume down |
+   | Mute | Mute |
+   | Numbers | Jump to channel |
+   | Back / Exit | Last channel |
+   | Power | Standby |
+
+**Volume buttons:** many TVs keep Vol+/Vol− for the TV speakers and never send
+them over CEC. That is normal. Use **left/right** on the D-pad for the box
+volume, or the TV's own volume if HDMI audio is already loud enough.
+
+CEC is not identical on every set. If keys do nothing, confirm CEC is on, the
+Pi is the selected HDMI source, and check `journalctl -u nostalgiabox -f`
+for `HDMI-CEC input active`.
+
+You do **not** need Flirc if CEC works on your TV. Flirc remains optional.
+
+### Part G2 — Program the remote (Flirc), optional
+
+The **Flirc** adapter is only needed if your TV does not send CEC keys. Do this
+**on your computer**:
 
 1. Unplug the Flirc from the Pi and plug it into your computer.
 2. Install the **Flirc** app from [flirc.tv/downloads](https://flirc.tv/pages/downloads).

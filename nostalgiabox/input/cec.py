@@ -2,10 +2,11 @@
 
 Many TVs can forward remote button presses to attached HDMI devices over CEC
 (Samsung "Anynet+", LG "SimpLink", Sony "BRAVIA Sync", etc.). On a Raspberry Pi
-the easiest way to receive those is libCEC's ``cec-client`` utility, which
-prints a line like ``key pressed: up (1)`` for every button. This backend spawns
-``cec-client`` and turns those lines into actions - so the kids can just use the
-TV remote they already point at the screen, no separate remote required.
+libCEC's ``cec-client`` prints ``key pressed: up (1)`` and raw traffic such as
+``>> 01:44:01`` (User Control Pressed). This backend turns those into actions.
+
+The Pi must be the **active source** or most TVs never send keys here. After
+``cec-client`` starts we send ``as`` (active source) and ``on 0`` (wake TV).
 """
 
 from __future__ import annotations
@@ -14,14 +15,54 @@ import logging
 import re
 import shutil
 import subprocess
-from typing import List, Optional
+from typing import Dict, List, Optional
 
+from ..actions import Action, InputEvent
 from .base import InputBackend
 from .keymap import cec_key_to_event
 
 log = logging.getLogger(__name__)
 
+# cec-client English lines (ignore "key released:").
 _KEY_PRESSED_RE = re.compile(r"key pressed:\s*(.+?)\s*(?:\(|$)", re.IGNORECASE)
+# User Control Pressed opcode 0x44 + operand (not 0x45 released).
+_USER_CTRL_RE = re.compile(
+    r">>\s*[0-9a-fA-F]{2}:44:([0-9a-fA-F]{2})\b",
+)
+
+# HDMI-CEC User Control operand -> action (CEC 1.4 table).
+_CEC_OPERANDS: Dict[int, InputEvent] = {
+    0x00: InputEvent(Action.ENTER),
+    0x01: InputEvent(Action.CHANNEL_UP),
+    0x02: InputEvent(Action.CHANNEL_DOWN),
+    0x03: InputEvent(Action.VOLUME_DOWN),
+    0x04: InputEvent(Action.VOLUME_UP),
+    0x0D: InputEvent(Action.LAST_CHANNEL),
+    0x30: InputEvent(Action.CHANNEL_UP),
+    0x31: InputEvent(Action.CHANNEL_DOWN),
+    0x32: InputEvent(Action.LAST_CHANNEL),
+    0x35: InputEvent(Action.INFO),
+    0x40: InputEvent(Action.POWER),
+    0x41: InputEvent(Action.VOLUME_UP),
+    0x42: InputEvent(Action.VOLUME_DOWN),
+    0x43: InputEvent(Action.MUTE),
+}
+for _d in range(10):
+    _CEC_OPERANDS[0x20 + _d] = InputEvent.digit(_d)
+
+
+def parse_cec_line(line: str) -> Optional[InputEvent]:
+    """Turn one cec-client log line into an InputEvent, or None."""
+    if "key released" in line.lower():
+        return None
+    hex_match = _USER_CTRL_RE.search(line)
+    if hex_match:
+        operand = int(hex_match.group(1), 16)
+        return _CEC_OPERANDS.get(operand)
+    name_match = _KEY_PRESSED_RE.search(line)
+    if name_match:
+        return cec_key_to_event(name_match.group(1))
+    return None
 
 
 class CecBackend(InputBackend):
@@ -41,6 +82,7 @@ class CecBackend(InputBackend):
         self._osd_name = osd_name
         self._extra_args = list(extra_args) if extra_args else []
         self._proc: Optional[subprocess.Popen] = None
+        self._claimed_source = False
 
     @staticmethod
     def is_available(binary: str = "cec-client") -> bool:
@@ -53,14 +95,14 @@ class CecBackend(InputBackend):
         cmd = [
             self._binary,
             "-t", "p",            # register as a Playback device
-            "-o", self._osd_name,  # the name the TV shows for this device
-            "-d", "8",            # log level: include the key-press traffic
+            "-o", self._osd_name,
+            "-d", "8",            # include key-press / traffic lines
             *self._extra_args,
         ]
         try:
             self._proc = subprocess.Popen(
                 cmd,
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -75,13 +117,28 @@ class CecBackend(InputBackend):
         for line in self._proc.stdout:
             if self.stopping:
                 break
+            if not self._claimed_source:
+                self._claim_active_source()
+                self._claimed_source = True
             self._handle_line(line)
 
-    def _handle_line(self, line: str) -> None:
-        match = _KEY_PRESSED_RE.search(line)
-        if not match:
+    def _claim_active_source(self) -> None:
+        """Ask the TV to treat the Pi as the current HDMI device (sends keys here)."""
+        self._send("on 0")
+        self._send("as")
+        log.info("HDMI-CEC: claimed active source (TV remote should target the Pi)")
+
+    def _send(self, command: str) -> None:
+        if self._proc is None or self._proc.stdin is None:
             return
-        event = cec_key_to_event(match.group(1))
+        try:
+            self._proc.stdin.write(command.strip() + "\n")
+            self._proc.stdin.flush()
+        except OSError:
+            log.debug("could not write CEC command %r", command, exc_info=True)
+
+    def _handle_line(self, line: str) -> None:
+        event = parse_cec_line(line)
         if event is not None:
             self.emit(event)
 
@@ -99,4 +156,4 @@ class CecBackend(InputBackend):
         self._proc = None
 
 
-__all__ = ["CecBackend"]
+__all__ = ["CecBackend", "parse_cec_line"]
