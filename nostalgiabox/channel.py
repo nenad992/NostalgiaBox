@@ -354,6 +354,11 @@ def mixed_playlists(
         if not homes and show_names:
             homes = {show_names[i % len(show_names)]}
         playlists.append(rotate_playlist_to_shows(base, homes, root))
+    if playlists and len(playlists[0]) > 1:
+        firsts = {pl[0] for pl in playlists}
+        if len(firsts) == 1:
+            n = len(playlists[0])
+            playlists = [pl[i % n :] + pl[: i % n] for i, pl in enumerate(playlists)]
     return playlists
 
 
@@ -474,12 +479,7 @@ class Channel:
             self._ensure_broadcast(epoch=epoch)
         if self._broadcast is not None:
             return self._broadcast.next_path(current)
-        ordered = air_order(
-            self.episodes,
-            random.Random(0),
-            root=self.config.path,
-            block_size=self._block_size,
-        )
+        ordered = list(self.episodes)
         i = ordered.index(current) if current in ordered else -1
         if i < 0:
             return ordered[0]
@@ -493,9 +493,7 @@ class Channel:
                 return list(sched._episodes)
         if self.is_empty:
             return []
-        return air_order(
-            self.episodes, self._rng, root=self.config.path, block_size=self._block_size
-        )
+        return list(self.episodes)
 
     def ends_cycle(self, current: Path) -> bool:
         paths = self.air_paths()
@@ -521,9 +519,7 @@ class Channel:
         if self.is_empty:
             return None
         use_epoch = self._broadcast_epoch if self._broadcast_epoch is not None else epoch
-        ordered = air_order(
-            self.episodes, self._rng, root=self.config.path, block_size=self._block_size
-        )
+        ordered = list(self.episodes)
         durations: List[float] = []
         for path in ordered:
             dur = probe_duration(path)
@@ -622,6 +618,13 @@ def build_lineup(
             log.warning(
                 "channel %s (%s) has no playable episodes in %s",
                 ch_cfg.number, ch_cfg.name, ch_cfg.path,
+            )
+        else:
+            episodes = air_order(
+                episodes,
+                deal_rng,
+                root=ch_cfg.path,
+                block_size=config.show_block_episodes,
             )
         channels.append(
             _make_channel(

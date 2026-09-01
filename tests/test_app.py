@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime
 
 from nostalgiabox.actions import Action, InputEvent
 from nostalgiabox.app import TVApp
@@ -323,6 +324,90 @@ def test_finishing_last_episode_picks_up_new_file(tmp_path, monkeypatch):
     app._drain_playback_events()
     assert player.current is not None
     assert player.current.name == "s01e02.mp4"
+
+
+def test_nightly_rescan_adds_files_without_stopping_current(tmp_path):
+    pool = tmp_path / "usb"
+    show = pool / "Stitch"
+    show.mkdir(parents=True)
+    first = show / "s01e01.mp4"
+    first.write_bytes(b"x")
+
+    class Wall:
+        def __init__(self):
+            self.dt = datetime(2026, 9, 1, 3, 0, 0)
+
+        def __call__(self):
+            return self.dt
+
+    wall = Wall()
+    config = config_from_dict(
+        {
+            "mixed": {"path": str(pool), "count": 10, "first_number": 1},
+            "state_path": str(tmp_path / "map.json"),
+            "start_channel": 1,
+            "tune_in": "broadcast",
+            "start_offset": 0,
+            "bridge_seconds": 0,
+            "library_rescan_hour": 4,
+            "power_off_command": [],
+        }
+    )
+    player = MockPlayer()
+    app = TVApp(
+        config, player, InputManager([]), clock=FakeClock(), wall_clock=wall
+    )
+    app.start()
+    playing = player.current
+    assert playing is not None
+    (show / "s01e02.mp4").write_bytes(b"x")
+    app.step()
+    names_before = {p.name for c in app.lineup for p in c.episodes}
+    assert "s01e02.mp4" not in names_before
+    wall.dt = datetime(2026, 9, 1, 4, 0, 0)
+    app.step()
+    names_after = {p.name for c in app.lineup for p in c.episodes}
+    assert "s01e02.mp4" in names_after
+    assert player.current == playing
+
+
+def test_nightly_rescan_skipped_when_hdmi_playing(tmp_path):
+    pool = tmp_path / "usb"
+    show = pool / "Stitch"
+    show.mkdir(parents=True)
+    (show / "s01e01.mp4").write_bytes(b"x")
+
+    class Wall:
+        def __init__(self):
+            self.dt = datetime(2026, 9, 1, 3, 0, 0)
+
+        def __call__(self):
+            return self.dt
+
+    wall = Wall()
+    config = config_from_dict(
+        {
+            "mixed": {"path": str(pool), "count": 10, "first_number": 1},
+            "state_path": str(tmp_path / "map.json"),
+            "start_channel": 1,
+            "tune_in": "broadcast",
+            "start_offset": 0,
+            "bridge_seconds": 0,
+            "library_rescan_hour": 4,
+            "power_off_command": [],
+        }
+    )
+    player = MockPlayer()
+    app = TVApp(
+        config, player, InputManager([]), clock=FakeClock(), wall_clock=wall
+    )
+    app._hdmi_signal = lambda: True
+    app.start()
+    (show / "s01e02.mp4").write_bytes(b"x")
+    wall.dt = datetime(2026, 9, 1, 4, 0, 0)
+    app.step()
+    names = {p.name for c in app.lineup for p in c.episodes}
+    assert "s01e02.mp4" not in names
 
 
 def test_quit_stops_running(tmp_path):

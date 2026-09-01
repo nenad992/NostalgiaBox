@@ -23,6 +23,7 @@ mixed:
 # At most 3 episodes of one show in a row, then another show, then resume.
 # state_path: ~/.local/share/nostalgiabox/show-channels.json
 # show_block_episodes: 3
+# library_rescan_hour: 4   # -1 to disable. Skipped that night if HDMI is playing.
 
 empty_channel_message: "Ovaj kanal nema danas crtaća"
 

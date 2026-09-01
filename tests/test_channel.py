@@ -359,6 +359,22 @@ def test_mixed_playlists_keep_every_channel_busy(tmp_path):
     assert lists[poke_i][0].parent.name == "Pokemon"
 
 
+def test_mixed_playlists_stagger_when_one_folder_of_files(tmp_path):
+    from nostalgiabox.channel import deal_episodes, mixed_playlists
+
+    pool = tmp_path / "Sample"
+    pool.mkdir()
+    files = []
+    for i in range(4):
+        p = pool / f"clip{i}.mp4"
+        p.write_bytes(b"x")
+        files.append(p)
+    homes = deal_episodes(files, 10, random.Random(0), root=pool)
+    lists = mixed_playlists(files, homes, root=pool, block_size=3)
+    firsts = [pl[0].name for pl in lists]
+    assert len(set(firsts[:4])) == 4
+
+
 def test_channel_wraps_to_first_episode_not_empty(tmp_path):
     from nostalgiabox.config import ChannelConfig
 

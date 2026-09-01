@@ -18,6 +18,7 @@ import logging
 import queue
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -49,6 +50,7 @@ class TVApp:
         *,
         overlay: Optional[OverlayManager] = None,
         clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], datetime] = datetime.now,
         assets_dir: Optional[Path] = None,
     ) -> None:
         self.config = config
@@ -56,6 +58,8 @@ class TVApp:
         self.input = input_manager
         self.overlay = overlay or OverlayManager(player, config, clock=clock)
         self._clock = clock
+        self._wall_clock = wall_clock
+        self._last_nightly = wall_clock()
 
         self.lineup: ChannelLineup = build_lineup(config)
 
@@ -178,6 +182,7 @@ class TVApp:
         now = self._clock()
         self.overlay.tick()
         self._tick_library()
+        self._tick_nightly_rescan()
         self._tick_hdmi_idle(now)
         self._maybe_commit_switch(now)
         self._maybe_commit_digits(now)
@@ -515,12 +520,49 @@ class TVApp:
         except OSError:
             return False
 
-    def _refresh_library(self) -> None:
+    def _refresh_library(self, *, keep_playback: bool = False) -> None:
         current_number = self.lineup.current.number
+        playing = self._playing_path
         self.lineup = build_lineup(self.config)
         if self.lineup.has_number(current_number):
             self.lineup.select_number(current_number)
         log.info("library rescanned; %d channels", len(self.lineup))
+        if keep_playback and playing is not None:
+            try:
+                still = playing.resolve() in {
+                    p.resolve() for p in self.lineup.current.episodes
+                }
+            except OSError:
+                still = playing in self.lineup.current.episodes
+            if still:
+                return
+
+    def _tick_nightly_rescan(self) -> None:
+        hour = self.config.library_rescan_hour
+        if hour < 0:
+            return
+        now = self._wall_clock()
+        target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        if now < target:
+            return
+        if self._last_nightly >= target:
+            return
+        if self._hdmi_is_live():
+            log.info("nightly library rescan skipped; HDMI is playing")
+            self._last_nightly = now
+            return
+        log.info("nightly library rescan (%02d:00)", hour)
+        self._last_nightly = now
+        self._refresh_library(keep_playback=True)
+
+    def _hdmi_is_live(self) -> bool:
+        """True only when the Pi sees a live HDMI sink and we are outputting picture."""
+        if self.standby or self.hdmi_idle:
+            return False
+        present = self._hdmi_signal()
+        if present is not True:
+            return False
+        return self._playing_path is not None
 
     def _tick_library(self) -> None:
         present = self._library_present()

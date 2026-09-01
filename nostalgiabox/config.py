@@ -154,6 +154,8 @@ class Config:
     state_path: Optional[Path] = None
     # Max consecutive episodes of one show before switching (if the channel has 2+).
     show_block_episodes: int = 3
+    # Local hour (0-23) to rescan the library; -1 = never (still rescan on USB).
+    library_rescan_hour: int = 4
 
     mixed: Optional[MixedPoolConfig] = None
     empty_channel_message: str = "Ovaj kanal nema danas crtaća"
@@ -418,6 +420,9 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
         state_path=_optional_state_path(data.get("state_path"), base_dir),
         show_block_episodes=_clamp_int(
             data.get("show_block_episodes", 3), 1, 50, "show_block_episodes"
+        ),
+        library_rescan_hour=_clamp_int(
+            data.get("library_rescan_hour", 4), -1, 23, "library_rescan_hour"
         ),
         mixed=mixed,
         empty_channel_message=str(
