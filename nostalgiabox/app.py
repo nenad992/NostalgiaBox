@@ -302,6 +302,7 @@ class TVApp:
         if request is None:
             # No episodes on this channel: show the "no signal" screen.
             self.overlay.show_channel_bug(channel.number, channel.name)
+            self.overlay.clear_guide()
             self._show_no_signal(channel)
             return
 
@@ -344,8 +345,8 @@ class TVApp:
         self._flash_guide(channel, request)
 
     def _flash_guide(self, channel: Channel, request: PlayRequest) -> None:
-        nxt = channel.next_path(request.path)
-        self.overlay.show_guide(request.path.stem, nxt.stem)
+        now_name, next_name = channel.guide_filenames(request.path)
+        self.overlay.show_guide(now_name, next_name)
 
     def _show_no_signal(self, channel: Channel) -> None:
         self._switch_deadline = None
@@ -408,7 +409,8 @@ class TVApp:
         channel = self.lineup.current
         self.overlay.show_channel_bug(channel.number, channel.name)
         if self._playing_path is not None:
-            self._flash_guide(channel, PlayRequest(self._playing_path))
+            now_name, next_name = channel.guide_filenames(self._playing_path)
+            self.overlay.show_guide(now_name, next_name)
 
     def _toggle_standby(self) -> None:
         self.standby = not self.standby

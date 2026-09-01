@@ -82,6 +82,10 @@ class OverlayManager:
         self._player.set_overlay(_ID_GUIDE, ass, CANVAS_W, CANVAS_H)
         self._arm(_ID_GUIDE, dur)
 
+    def clear_guide(self) -> None:
+        self._player.clear_overlay(_ID_GUIDE)
+        self._expiry.pop(_ID_GUIDE, None)
+
     def show_volume(
         self, level: int, muted: bool, *, duration: Optional[float] = None
     ) -> None:
@@ -172,13 +176,17 @@ def _channel_bug_ass(number: int, name: str, ui: UiConfig) -> str:
 
 
 def _guide_ass(now_title: str, next_title: str, ui: UiConfig) -> str:
-    """Two short lines at the bottom: what is on, and what follows."""
+    """Two short lines above the CRT bottom edge: what is on, and what follows.
+
+    ``\\an8`` (top-centre) so the block grows downward from a y that already
+    clears the rounded-corner crop — ``\\an2`` at the safe edge sat in the mask.
+    """
     now_line = (
-        rf"{{\an2\pos({_FRAME_CX},{_IY1 - 48}){_style(ui, size=36)}}}"
+        rf"{{\an8\pos({_FRAME_CX},{_IY1 - 100}){_style(ui, size=32)}}}"
         f"NOW  {_escape(now_title)}"
     )
     next_line = (
-        rf"{{\an2\pos({_FRAME_CX},{_IY1}){_style(ui, size=36)}}}"
+        rf"{{\an8\pos({_FRAME_CX},{_IY1 - 56}){_style(ui, size=32)}}}"
         f"NEXT  {_escape(next_title)}"
     )
     return "\n".join([now_line, next_line])

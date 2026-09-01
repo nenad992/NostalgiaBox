@@ -155,11 +155,32 @@ class BroadcastSchedule:
         return PlayRequest(path=self._episodes[-1], start=0.0)
 
     def next_path(self, current: Path) -> Path:
-        try:
-            i = self._episodes.index(current)
-        except ValueError:
+        i = _index_of_path(self._episodes, current)
+        if i < 0:
             return self._episodes[0]
         return self._episodes[(i + 1) % len(self._episodes)]
+
+
+def _index_of_path(ordered: Sequence[Path], current: Path) -> int:
+    """Find ``current`` in ``ordered`` even if the Path objects differ."""
+    for i, path in enumerate(ordered):
+        if path == current:
+            return i
+    try:
+        target = current.resolve()
+    except OSError:
+        target = None
+    if target is not None:
+        for i, path in enumerate(ordered):
+            try:
+                if path.resolve() == target:
+                    return i
+            except OSError:
+                continue
+    names = [path.name for path in ordered]
+    if names.count(current.name) == 1:
+        return names.index(current.name)
+    return -1
 
 
 def series_prefix(stem: str) -> str:
@@ -480,10 +501,22 @@ class Channel:
         if self._broadcast is not None:
             return self._broadcast.next_path(current)
         ordered = list(self.episodes)
-        i = ordered.index(current) if current in ordered else -1
+        i = _index_of_path(ordered, current)
         if i < 0:
             return ordered[0]
         return ordered[(i + 1) % len(ordered)]
+
+    def guide_filenames(self, playing: Path) -> tuple[str, str]:
+        """NOW / NEXT file names for the bottom OSD, from this channel's air order."""
+        paths = self.air_paths() or list(self.episodes)
+        if not paths:
+            return playing.name, playing.name
+        i = _index_of_path(paths, playing)
+        if i < 0:
+            now, nxt = playing, paths[0]
+        else:
+            now, nxt = paths[i], paths[(i + 1) % len(paths)]
+        return now.stem, nxt.stem
 
     def air_paths(self) -> List[Path]:
         if self.tune_in_mode == "broadcast":
@@ -497,7 +530,7 @@ class Channel:
 
     def ends_cycle(self, current: Path) -> bool:
         paths = self.air_paths()
-        return bool(paths) and current == paths[-1]
+        return bool(paths) and _index_of_path(paths, current) == len(paths) - 1
 
     def play_after(self, current: Path) -> Optional[PlayRequest]:
         """Next file after ``current`` (wraps to the first). Used on EOF."""
@@ -584,6 +617,23 @@ class ChannelLineup:
         return self.current
 
 
+def _folder_show_names(episodes: Sequence[Path], root: Path) -> List[str]:
+    """Show folder names (not flat filenames like s1e1) used for channel labels."""
+    names: List[str] = []
+    try:
+        root_r = root.resolve()
+    except OSError:
+        root_r = root
+    for path in episodes:
+        try:
+            rel = path.resolve().relative_to(root_r)
+        except (ValueError, OSError):
+            continue
+        if len(rel.parts) > 1:
+            names.append(rel.parts[0])
+    return sorted(set(names), key=str.lower)
+
+
 def build_lineup(
     config: Config,
     *,
@@ -660,20 +710,12 @@ def build_lineup(
             root=pool_root,
             block_size=config.show_block_episodes,
         )
-        shows_on: Dict[int, List[str]] = {}
-        for key, number in mapping.items():
-            shows_on.setdefault(number, []).append(key)
         for i, (ch_cfg, home_eps, episodes) in enumerate(
             zip(pool_cfgs, dealt, playlists)
         ):
-            names = sorted(shows_on.get(ch_cfg.number, []))
-            if not names:
-                names = sorted({show_key(p, pool_root) for p in home_eps})
-            if len(names) == 1:
-                ch_cfg = replace(ch_cfg, name=_prettify_name(names[0]))
-            elif not names and episodes:
-                starter = show_key(episodes[0], pool_root)
-                ch_cfg = replace(ch_cfg, name=_prettify_name(starter))
+            folder_homes = _folder_show_names(home_eps, pool_root)
+            if len(folder_homes) == 1:
+                ch_cfg = replace(ch_cfg, name=_prettify_name(folder_homes[0]))
             if not episodes:
                 log.info(
                     "channel %s (%s) has no cartoons in the current library",

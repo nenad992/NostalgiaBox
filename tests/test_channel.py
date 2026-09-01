@@ -498,3 +498,53 @@ def test_broadcast_plays_show_in_file_order(tmp_path, monkeypatch):
     assert r1.path.name == "s01e01.mp4"
     assert r2.path.name == "s01e02.mp4"
     assert ch.next_path(r1.path).name == "s01e02.mp4"
+    now, nxt = ch.guide_filenames(r1.path)
+    assert now == "s01e01"
+    assert nxt == "s01e02"
+
+
+def test_guide_filenames_follows_this_channel_not_pool_start(tmp_path, monkeypatch):
+    import nostalgiabox.channel as channel_mod
+    from pathlib import Path
+
+    monkeypatch.setattr(channel_mod, "probe_duration", lambda p: 60.0)
+    pool = tmp_path / "Sample Channel"
+    pool.mkdir()
+    for i in range(1, 5):
+        (pool / f"s1e{i}.mp4").write_bytes(b"x")
+    lineup = build_lineup(
+        config_from_dict(
+            {
+                "mixed": {"path": str(pool), "count": 10, "first_number": 1},
+                "state_path": str(tmp_path / "map.json"),
+                "tune_in": "broadcast",
+                "start_offset": 0,
+            }
+        )
+    )
+    ch = lineup.select_number(2)
+    playing = ch.tune_in(now=ch._broadcast_epoch or 0.0).path
+    now, nxt = ch.guide_filenames(Path(playing.name))  # name-only Path
+    assert now == playing.stem
+    order = [p.stem for p in ch.episodes]
+    i = order.index(playing.stem)
+    assert nxt == order[(i + 1) % len(order)]
+
+
+def test_flat_mixed_pool_keeps_kanal_channel_names(tmp_path):
+    pool = tmp_path / "Sample Channel"
+    pool.mkdir()
+    for i in range(1, 5):
+        (pool / f"s1e{i}.mp4").write_bytes(b"x")
+    lineup = build_lineup(
+        config_from_dict(
+            {
+                "mixed": {"path": str(pool), "count": 10, "first_number": 1},
+                "state_path": str(tmp_path / "map.json"),
+            }
+        )
+    )
+    names = [c.name for c in lineup]
+    assert all(n.startswith("Kanal") for n in names)
+    assert "S1E1" not in names
+

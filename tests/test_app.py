@@ -49,6 +49,8 @@ def test_start_tunes_to_start_channel_and_plays(tmp_path):
     assert player.volume == 70
     assert player.overlays.get(1) and "Dragon Tales" in player.overlays[1]
     assert player.overlays.get(5) and "NOW" in player.overlays[5] and "NEXT" in player.overlays[5]
+    assert player.current is not None
+    assert f"NOW  {player.current.stem}" in player.overlays[5]
 
 
 def test_channel_change_now_next_survives_fast_zaps(tmp_path):
@@ -60,6 +62,42 @@ def test_channel_change_now_next_survives_fast_zaps(tmp_path):
     clock.advance(4.1)
     app.overlay.tick()
     assert 5 not in player.overlays
+
+
+def test_now_next_osd_matches_playing_file_on_mixed_channels(tmp_path, monkeypatch):
+    import nostalgiabox.channel as channel_mod
+
+    monkeypatch.setattr(channel_mod, "probe_duration", lambda p: 60.0)
+    pool = tmp_path / "Sample Channel"
+    pool.mkdir()
+    for i in range(1, 5):
+        (pool / f"s1e{i}.mp4").write_bytes(b"x")
+    config = config_from_dict(
+        {
+            "mixed": {"path": str(pool), "count": 10, "first_number": 1},
+            "state_path": str(tmp_path / "map.json"),
+            "start_channel": 1,
+            "tune_in": "broadcast",
+            "start_offset": 0,
+            "bridge_seconds": 0,
+            "power_off_command": [],
+        }
+    )
+    player = MockPlayer()
+    app = TVApp(config, player, InputManager([]), clock=FakeClock())
+    app.start()
+    seen_now = set()
+    for _ in range(4):
+        playing = player.current
+        assert playing is not None
+        ass = player.overlays[5]
+        now_name, next_name = app.lineup.current.guide_filenames(playing)
+        assert f"NOW  {playing.stem}" in ass
+        assert f"NEXT  {next_name}" in ass
+        assert now_name == playing.stem
+        seen_now.add(playing.name)
+        send(app, Action.CHANNEL_UP)
+    assert len(seen_now) >= 2
 
 
 def test_channel_up_down_wraps(tmp_path):

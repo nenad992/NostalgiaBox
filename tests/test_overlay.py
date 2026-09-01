@@ -124,6 +124,19 @@ def test_overlay_uses_configured_font_and_color(tmp_path):
     assert "&H005AFF4D" in ass         # #4DFF5A -> ASS BBGGRR
 
 
+def test_guide_sits_above_bottom_safe_edge(tmp_path):
+    from nostalgiabox.overlay import CANVAS_H
+
+    player = MockPlayer()
+    om = OverlayManager(player, _config(tmp_path), clock=FakeClock())
+    om.show_guide("now_file", "next_file")
+    ys = [int(m) for m in re.findall(r"\\pos\(\d+,(\d+)\)", player.overlays[5])]
+    inset = int(CANVAS_H * 0.06)
+    iy1 = CANVAS_H - inset
+    assert ys and min(ys) > inset and max(ys) < iy1
+    assert "\\an8" in player.overlays[5]
+
+
 def test_guide_shows_now_and_next_and_expires(tmp_path):
     clock = FakeClock()
     player = MockPlayer()
