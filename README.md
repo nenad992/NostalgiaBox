@@ -273,9 +273,20 @@ the card. (To update later, disable the overlay, update, then re-enable it.)
 | Adjust volume / mute | The TV's own volume buttons |
 | Standby (blank screen) | Power |
 
+Changing channel flashes **NOW** and **NEXT** at the bottom (the file names)
+for a few seconds. Zap quickly and it just updates; it does not stick around.
+
 If the TV is off (HDMI link down) for 10 minutes, playback **stops** so the Pi
 is not decoding cartoons into a black screen. Turn the TV back on to that HDMI
 and it joins the last channel **where that station would be now**.
+
+Cartoons live on the USB (or SD) folder in `mixed.path`. Unplug it and the box
+rescans (empty channels until it is back). Plug it in again and the same shows
+stay on the same channel numbers. If every channel already has a show, extra
+series are packed onto a channel so **every file still airs**. A channel with
+more than one show plays **at most three episodes** of one series, then
+something else, then comes back. New files are picked up when a channel
+finishes its last episode and loops, or as soon as the drive returns.
 
 Turn it on by plugging in power; it boots back to a channel automatically.
 

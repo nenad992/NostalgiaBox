@@ -26,6 +26,7 @@ dev/media/**/*.webm
 dev/media/**/*.mpg
 dev/media/**/*.mpeg
 dev/media/**/*.ts
+dev/show-channels.json
 
 # OS cruft
 .DS_Store

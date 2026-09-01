@@ -122,3 +122,36 @@ def test_overlay_uses_configured_font_and_color(tmp_path):
     ass = player.overlays[1]
     assert "\\fnVT323" in ass          # bundled retro font
     assert "&H005AFF4D" in ass         # #4DFF5A -> ASS BBGGRR
+
+
+def test_guide_shows_now_and_next_and_expires(tmp_path):
+    clock = FakeClock()
+    player = MockPlayer()
+    om = OverlayManager(player, _config(tmp_path), clock=clock)
+    om.show_guide("stitch_s01e01", "pokemon_s01e02")
+    ass = player.overlays[5]
+    assert "NOW  stitch_s01e01" in ass
+    assert "NEXT  pokemon_s01e02" in ass
+    clock.advance(3.9)
+    om.tick()
+    assert 5 in player.overlays
+    clock.advance(0.2)
+    om.tick()
+    assert 5 not in player.overlays
+
+
+def test_guide_fast_channel_change_replaces_and_rearms(tmp_path):
+    clock = FakeClock()
+    player = MockPlayer()
+    om = OverlayManager(player, _config(tmp_path), clock=clock)
+    om.show_guide("a", "b")
+    clock.advance(3.0)
+    om.show_guide("c", "d")
+    assert "NOW  c" in player.overlays[5]
+    assert "NOW  a" not in player.overlays[5]
+    clock.advance(3.9)
+    om.tick()
+    assert 5 in player.overlays
+    clock.advance(0.2)
+    om.tick()
+    assert 5 not in player.overlays

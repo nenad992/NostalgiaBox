@@ -27,5 +27,8 @@ input:
   dev_http: true
   dev_http_port: 8765
 
+# Sticky show -> channel (gitignored).
+state_path: dev/show-channels.json
+
 crt:
   enabled: true

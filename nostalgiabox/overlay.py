@@ -41,6 +41,7 @@ _ID_CHANNEL = 1
 _ID_VOLUME = 2
 _ID_STANDBY = 3
 _ID_MESSAGE = 4
+_ID_GUIDE = 5
 
 _BLACK = "&H00000000"
 
@@ -71,6 +72,15 @@ class OverlayManager:
         ass = _channel_bug_ass(number, name, self._ui)
         self._player.set_overlay(_ID_CHANNEL, ass, CANVAS_W, CANVAS_H)
         self._arm(_ID_CHANNEL, dur)
+
+    def show_guide(
+        self, now_title: str, next_title: str, *, duration: Optional[float] = None
+    ) -> None:
+        """Bottom NOW / NEXT filenames. Replacing this overlay resets the timer."""
+        dur = self._config.channel_bug_seconds if duration is None else duration
+        ass = _guide_ass(now_title, next_title, self._ui)
+        self._player.set_overlay(_ID_GUIDE, ass, CANVAS_W, CANVAS_H)
+        self._arm(_ID_GUIDE, dur)
 
     def show_volume(
         self, level: int, muted: bool, *, duration: Optional[float] = None
@@ -110,7 +120,7 @@ class OverlayManager:
                 self._expiry.pop(overlay_id, None)
 
     def clear_all(self) -> None:
-        for overlay_id in (_ID_CHANNEL, _ID_VOLUME, _ID_STANDBY, _ID_MESSAGE):
+        for overlay_id in (_ID_CHANNEL, _ID_VOLUME, _ID_STANDBY, _ID_MESSAGE, _ID_GUIDE):
             self._player.clear_overlay(overlay_id)
         self._expiry.clear()
 
@@ -159,6 +169,19 @@ def _channel_bug_ass(number: int, name: str, ui: UiConfig) -> str:
         rf"{{\an9\pos({_IX1},{_IY0 + 104}){_style(ui, size=40)}}}{_escape(name)}"
     )
     return "\n".join([number_line, name_line])
+
+
+def _guide_ass(now_title: str, next_title: str, ui: UiConfig) -> str:
+    """Two short lines at the bottom: what is on, and what follows."""
+    now_line = (
+        rf"{{\an2\pos({_FRAME_CX},{_IY1 - 48}){_style(ui, size=36)}}}"
+        f"NOW  {_escape(now_title)}"
+    )
+    next_line = (
+        rf"{{\an2\pos({_FRAME_CX},{_IY1}){_style(ui, size=36)}}}"
+        f"NEXT  {_escape(next_title)}"
+    )
+    return "\n".join([now_line, next_line])
 
 
 def _volume_ass(level: int, muted: bool, ui: UiConfig) -> str:

@@ -8,14 +8,21 @@
 
 # -----------------------------------------------------------------------------
 # Mixed pool (recommended): one folder, 10 always-on channels.
-# Each file is on only one mixed channel for the calendar day; next day
-# reshuffles. Empty slots show empty_channel_message.
+# Each file is on only one mixed channel. Shows keep their channel number
+# (sticky). Empty slots show empty_channel_message.
 # -----------------------------------------------------------------------------
 mixed:
   path: /media/nostalgiabox/pool
   count: 10
   first_number: 1
   name_prefix: Kanal
+
+# Remembers which show lives on which channel (Stitch stays on CH1).
+# New shows take a free channel. If every channel already has a show, extra
+# shows are packed onto the lightest channel so every file still airs.
+# At most 3 episodes of one show in a row, then another show, then resume.
+# state_path: ~/.local/share/nostalgiabox/show-channels.json
+# show_block_episodes: 3
 
 empty_channel_message: "Ovaj kanal nema danas crtaća"
 

@@ -150,6 +150,11 @@ class Config:
     # Seconds of HDMI-down before stop(); 0 = never. Broadcast clock still runs.
     hdmi_idle_pause_seconds: float = 600.0
 
+    # Sticky show -> channel map (JSON). None = do not persist.
+    state_path: Optional[Path] = None
+    # Max consecutive episodes of one show before switching (if the channel has 2+).
+    show_block_episodes: int = 3
+
     mixed: Optional[MixedPoolConfig] = None
     empty_channel_message: str = "Ovaj kanal nema danas crtaća"
 
@@ -165,6 +170,12 @@ def _as_path(value: Any, base: Optional[Path]) -> Path:
     if not p.is_absolute() and base is not None:
         p = (base / p)
     return p
+
+
+def _optional_state_path(value: Any, base: Optional[Path]) -> Optional[Path]:
+    if not value:
+        return None
+    return _as_path(value, base)
 
 
 def _discover_channels(
@@ -403,6 +414,10 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
         fullscreen=bool(data.get("fullscreen", True)),
         hdmi_idle_pause_seconds=_clamp_float(
             data.get("hdmi_idle_pause_seconds", 600.0), 0.0, 86400.0, "hdmi_idle_pause_seconds"
+        ),
+        state_path=_optional_state_path(data.get("state_path"), base_dir),
+        show_block_episodes=_clamp_int(
+            data.get("show_block_episodes", 3), 1, 50, "show_block_episodes"
         ),
         mixed=mixed,
         empty_channel_message=str(

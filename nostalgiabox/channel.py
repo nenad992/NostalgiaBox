@@ -14,11 +14,12 @@ provides the up/down/by-number navigation a remote needs.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import random
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import AbstractSet, Dict, List, Optional, Sequence
@@ -30,7 +31,13 @@ _SEASON_PATTERNS = (
     re.compile(r"\b(\d{1,2})x\d{1,3}\b"),                       # 6x01
 )
 
-from .config import ChannelConfig, Config
+# Strip trailing episode markers so "Pokemon S01E02" and "pokemon_ep03" group.
+_SERIES_TAIL = re.compile(
+    r"[\s._-]*(?:s\d{1,2}[ ._-]?e\d{1,3}|\d{1,2}x\d{1,3}|ep(?:isode)?[\s._-]*\d+)$",
+    re.IGNORECASE,
+)
+
+from .config import ChannelConfig, Config, _prettify_name
 from .playlist import ShuffleBag
 from .probe import DEFAULT_EPISODE_SECONDS, probe_duration
 
@@ -118,8 +125,8 @@ class BroadcastSchedule:
 
     Given episode durations and a fixed start epoch, it can report exactly what
     "would be airing" at any wall-clock moment - the illusion that the station
-    kept broadcasting while nobody was watching. The running order is a single
-    shuffle that loops forever.
+    kept broadcasting while nobody was watching. Episodes air in show order
+    (see :func:`air_order`) and the list loops forever.
     """
 
     def __init__(
@@ -128,14 +135,12 @@ class BroadcastSchedule:
         durations: Sequence[float],
         *,
         epoch: float,
-        rng: random.Random,
+        rng: random.Random | None = None,
     ) -> None:
         if len(episodes) != len(durations):
             raise ValueError("episodes and durations must be the same length")
-        order = list(range(len(episodes)))
-        rng.shuffle(order)
-        self._episodes = [episodes[i] for i in order]
-        self._durations = [max(1.0, float(durations[i])) for i in order]
+        self._episodes = list(episodes)
+        self._durations = [max(1.0, float(d)) for d in durations]
         self._epoch = epoch
         self._cycle = sum(self._durations)
 
@@ -149,24 +154,166 @@ class BroadcastSchedule:
         # Floating point rounding safety net.
         return PlayRequest(path=self._episodes[-1], start=0.0)
 
+    def next_path(self, current: Path) -> Path:
+        try:
+            i = self._episodes.index(current)
+        except ValueError:
+            return self._episodes[0]
+        return self._episodes[(i + 1) % len(self._episodes)]
+
+
+def series_prefix(stem: str) -> str:
+    """Filename without trailing SxxExx / epNN / numbers, for grouping a show."""
+    name = stem.strip()
+    while True:
+        stripped = _SERIES_TAIL.sub("", name).rstrip(" ._-")
+        if stripped == name:
+            break
+        name = stripped
+    return name if len(name) >= 2 else stem
+
+
+def show_key(path: Path, root: Optional[Path] = None) -> str:
+    """Which 'show' a file belongs to (subfolder, else series name in the file)."""
+    if root is not None:
+        try:
+            rel = path.resolve().relative_to(root.resolve())
+            if len(rel.parts) > 1:
+                top = rel.parts[0]
+                if detect_season(top) is None and not top.lower().startswith("season"):
+                    return top.lower()
+            return series_prefix(path.stem).lower()
+        except ValueError:
+            pass
+    parent = path.parent.name
+    if parent and parent not in (".", "") and detect_season(parent) is None:
+        if not parent.lower().startswith("season"):
+            return parent.lower()
+    return series_prefix(path.stem).lower()
+
+
+def air_order(
+    episodes: Sequence[Path],
+    rng: random.Random,
+    *,
+    root: Optional[Path] = None,
+    block_size: int = 3,
+) -> List[Path]:
+    """Build a channel playlist: at most ``block_size`` episodes of one show, then another.
+
+    Each show's episodes stay in filename order and resume after the break.
+    A channel with only one show plays that show straight through.
+    """
+    groups: Dict[str, List[Path]] = {}
+    for path in episodes:
+        groups.setdefault(show_key(path, root), []).append(path)
+    for key in groups:
+        groups[key] = sorted(groups[key], key=lambda p: str(p).lower())
+    keys = sorted(groups)
+    if len(keys) <= 1:
+        return list(groups[keys[0]]) if keys else []
+    size = max(1, int(block_size))
+    cursor = {key: 0 for key in keys}
+    ordered: List[Path] = []
+    while True:
+        progressed = False
+        for key in keys:
+            start = cursor[key]
+            files = groups[key]
+            if start >= len(files):
+                continue
+            take = files[start : start + size]
+            ordered.extend(take)
+            cursor[key] = start + len(take)
+            progressed = True
+        if not progressed:
+            break
+    return ordered
+
+
+def load_show_map(path: Optional[Path]) -> Dict[str, int]:
+    """Persistent show-key -> channel number (Stitch stays on CH1)."""
+    if path is None or not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    raw = data.get("shows", data) if isinstance(data, dict) else {}
+    out: Dict[str, int] = {}
+    if isinstance(raw, dict):
+        for key, number in raw.items():
+            try:
+                out[str(key).lower()] = int(number)
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def save_show_map(path: Optional[Path], mapping: Dict[str, int]) -> None:
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"shows": dict(sorted(mapping.items()))}, indent=2) + "\n"
+        )
+    except OSError:
+        log.warning("could not save show map to %s", path, exc_info=True)
+
 
 def deal_episodes(
     episodes: Sequence[Path],
     n_channels: int,
     rng: random.Random,
+    *,
+    root: Optional[Path] = None,
+    mapping: Optional[Dict[str, int]] = None,
+    channel_numbers: Optional[Sequence[int]] = None,
 ) -> List[List[Path]]:
-    """Shuffle ``episodes`` and deal round-robin so each file hits one channel.
+    """Put each *show* on a sticky channel. New shows take the next empty slot.
 
-    Extra channels beyond the library size get an empty list. After this deal
-    is exhausted (next day / new seed), shuffle again so files can move.
+    Already-mapped shows never move (Pokemon stays on CH1). Extra shows beyond
+    the channel count share the least-full channel. ``mapping`` is updated
+    in place when provided.
     """
     if n_channels < 1:
         raise ValueError("n_channels must be >= 1")
-    items = list(episodes)
-    rng.shuffle(items)
+    numbers = list(channel_numbers) if channel_numbers is not None else list(
+        range(1, n_channels + 1)
+    )
+    if len(numbers) != n_channels:
+        raise ValueError("channel_numbers length must match n_channels")
+    index_of = {number: i for i, number in enumerate(numbers)}
+    valid = set(numbers)
+    groups: Dict[str, List[Path]] = {}
+    for path in episodes:
+        groups.setdefault(show_key(path, root), []).append(path)
+    owned: Dict[str, int] = {} if mapping is None else mapping
+    for key, number in list(owned.items()):
+        if number not in valid:
+            del owned[key]
+    used = {n for n in owned.values() if n in valid}
+    empty = [n for n in numbers if n not in used]
+    new_keys = sorted(k for k in groups if k not in owned)
+    for key in new_keys:
+        if empty:
+            owned[key] = empty.pop(0)
+        else:
+            # Every channel already has a show: park extras on the smallest pile.
+            def _load(n: int) -> int:
+                return sum(len(groups[k]) for k, ch in owned.items() if ch == n)
+
+            owned[key] = min(numbers, key=_load)
+        used.add(owned[key])
+        empty = [n for n in numbers if n not in used]
     buckets: List[List[Path]] = [[] for _ in range(n_channels)]
-    for i, episode in enumerate(items):
-        buckets[i % n_channels].append(episode)
+    for key, files in groups.items():
+        number = owned.get(key)
+        if number is None:
+            continue
+        i = index_of[number]
+        buckets[i].extend(sorted(files, key=lambda p: str(p).lower()))
     return buckets
 
 
@@ -196,6 +343,7 @@ class Channel:
         start_offset_max: Optional[float] = None,
         rng: Optional[random.Random] = None,
         broadcast_epoch: Optional[float] = None,
+        show_block_episodes: int = 3,
     ) -> None:
         self.config = config
         self.episodes: List[Path] = list(episodes)
@@ -210,6 +358,7 @@ class Channel:
             else max(self.start_offset_min, start_offset_max)
         )
         self._rng = rng or random.Random()
+        self._block_size = max(1, int(show_block_episodes))
         self._broadcast_epoch = broadcast_epoch
         self._bag: Optional[ShuffleBag[Path]] = (
             ShuffleBag(self.episodes, self._rng) if self.episodes else None
@@ -276,6 +425,55 @@ class Channel:
         self._resume_path = path
         self._resume_position = max(0.0, position)
 
+    def next_path(self, current: Path) -> Path:
+        """The file that follows ``current`` on this channel's air order."""
+        if not self.episodes:
+            return current
+        if self.tune_in_mode == "broadcast":
+            epoch = self._broadcast_epoch if self._broadcast_epoch is not None else time.time()
+            self._ensure_broadcast(epoch=epoch)
+        if self._broadcast is not None:
+            return self._broadcast.next_path(current)
+        ordered = air_order(
+            self.episodes,
+            random.Random(0),
+            root=self.config.path,
+            block_size=self._block_size,
+        )
+        i = ordered.index(current) if current in ordered else -1
+        if i < 0:
+            return ordered[0]
+        return ordered[(i + 1) % len(ordered)]
+
+    def air_paths(self) -> List[Path]:
+        if self.tune_in_mode == "broadcast":
+            epoch = self._broadcast_epoch if self._broadcast_epoch is not None else time.time()
+            sched = self._ensure_broadcast(epoch=epoch)
+            if sched is not None:
+                return list(sched._episodes)
+        if self.is_empty:
+            return []
+        return air_order(
+            self.episodes, self._rng, root=self.config.path, block_size=self._block_size
+        )
+
+    def ends_cycle(self, current: Path) -> bool:
+        paths = self.air_paths()
+        return bool(paths) and current == paths[-1]
+
+    def play_after(self, current: Path) -> Optional[PlayRequest]:
+        """Next file after ``current`` (wraps to the first). Used on EOF."""
+        if self.is_empty:
+            return None
+        nxt = self.next_path(current)
+        if self.tune_in_mode == "broadcast":
+            return PlayRequest(path=nxt, start=0.0)
+        if self.start_offset_max > self.start_offset_min:
+            start = self._rng.uniform(self.start_offset_min, self.start_offset_max)
+        else:
+            start = self.start_offset_min
+        return PlayRequest(path=nxt, start=start)
+
     # -- broadcast schedule -------------------------------------------------
     def _ensure_broadcast(self, *, epoch: float) -> Optional[BroadcastSchedule]:
         if self._broadcast is not None:
@@ -283,12 +481,15 @@ class Channel:
         if self.is_empty:
             return None
         use_epoch = self._broadcast_epoch if self._broadcast_epoch is not None else epoch
+        ordered = air_order(
+            self.episodes, self._rng, root=self.config.path, block_size=self._block_size
+        )
         durations: List[float] = []
-        for path in self.episodes:
+        for path in ordered:
             dur = probe_duration(path)
             durations.append(dur if dur else DEFAULT_EPISODE_SECONDS)
         self._broadcast = BroadcastSchedule(
-            self.episodes, durations, epoch=use_epoch, rng=self._rng
+            ordered, durations, epoch=use_epoch, rng=self._rng
         )
         return self._broadcast
 
@@ -399,11 +600,27 @@ def build_lineup(
             )
             if p.resolve() not in dedicated_files
         ]
-        dealt = deal_episodes(pool, len(pool_cfgs), deal_rng)
+        mapping = load_show_map(config.state_path)
+        numbers = [c.number for c in pool_cfgs]
+        dealt = deal_episodes(
+            pool,
+            len(pool_cfgs),
+            deal_rng,
+            root=pool_root,
+            mapping=mapping,
+            channel_numbers=numbers,
+        )
+        save_show_map(config.state_path, mapping)
+        shows_on: Dict[int, List[str]] = {}
+        for key, number in mapping.items():
+            shows_on.setdefault(number, []).append(key)
         for i, (ch_cfg, episodes) in enumerate(zip(pool_cfgs, dealt)):
+            names = sorted(shows_on.get(ch_cfg.number, []))
+            if len(names) == 1:
+                ch_cfg = replace(ch_cfg, name=_prettify_name(names[0]))
             if not episodes:
                 log.info(
-                    "channel %s (%s) has no cartoons in today's deal",
+                    "channel %s (%s) has no cartoons in the current library",
                     ch_cfg.number, ch_cfg.name,
                 )
             channels.append(
@@ -441,6 +658,7 @@ def _make_channel(
         start_offset_max=config.start_offset_max,
         rng=ch_rng,
         broadcast_epoch=broadcast_epoch,
+        show_block_episodes=config.show_block_episodes,
     )
 
 
@@ -452,7 +670,11 @@ __all__ = [
     "scan_episodes",
     "detect_season",
     "deal_episodes",
-    "mixed_deal_seed",
+    "show_key",
+    "series_prefix",
+    "air_order",
+    "load_show_map",
+    "save_show_map",
     "start_of_local_day",
     "build_lineup",
 ]

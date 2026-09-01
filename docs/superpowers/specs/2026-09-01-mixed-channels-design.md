@@ -8,7 +8,7 @@ Same YAML drives Raspberry Pi (`config.yaml`) and Tilt (`config.tilt.yaml`). Pat
 ## Behaviour
 
 - **10 mixed channels** from one folder (`mixed.path`).
-- Shuffle the pool (stable for a **local calendar day** + optional `shuffle_seed`), then **round-robin deal**. Each file is on at most one mixed channel until that deal is exhausted; the next day (or new seed) deals again so files can move.
+- Shuffle **shows** (subfolders like `Stitch/` / `Pokemon/`, or the series name in the filename). Deal shows round-robin onto mixed channels. Episodes of one show stay in filename order on that channel (no last-then-first). The next day (or new seed) deals shows again.
 - Files already used by **dedicated** `channels:` entries are removed from the pool first.
 - Mixed slots with no file: colour bars + persistent OSD **«Ovaj kanal nema danas crtaća»**.
 - **`tune_in: broadcast`**, **`start_offset: 0`**. Shared **start-of-local-day** epoch so flipping away and back joins the clock, not a random intro skip.

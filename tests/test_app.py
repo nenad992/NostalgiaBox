@@ -47,6 +47,18 @@ def test_start_tunes_to_start_channel_and_plays(tmp_path):
     assert player.current is not None  # an episode is playing
     assert player.volume == 70
     assert player.overlays.get(1) and "Dragon Tales" in player.overlays[1]
+    assert player.overlays.get(5) and "NOW" in player.overlays[5] and "NEXT" in player.overlays[5]
+
+
+def test_channel_change_now_next_survives_fast_zaps(tmp_path):
+    app, player, clock = build_app(tmp_path, bridge_seconds=0)
+    app.start()
+    send(app, Action.CHANNEL_UP)
+    send(app, Action.CHANNEL_UP)
+    assert "NOW" in player.overlays[5] and "NEXT" in player.overlays[5]
+    clock.advance(4.1)
+    app.overlay.tick()
+    assert 5 not in player.overlays
 
 
 def test_channel_up_down_wraps(tmp_path):
@@ -249,6 +261,68 @@ def test_hdmi_idle_disabled(tmp_path):
     app.step()
     assert player.current is not None
     assert app.hdmi_idle is False
+
+
+def test_usb_unplug_rescans_and_replug_keeps_show(tmp_path):
+    pool = tmp_path / "usb"
+    show = pool / "Stitch"
+    show.mkdir(parents=True)
+    (show / "s01e01.mp4").write_bytes(b"x")
+    config = config_from_dict(
+        {
+            "mixed": {"path": str(pool), "count": 10, "first_number": 1},
+            "state_path": str(tmp_path / "map.json"),
+            "start_channel": 1,
+            "tune_in": "broadcast",
+            "start_offset": 0,
+            "bridge_seconds": 0,
+            "power_off_command": [],
+        }
+    )
+    clock = FakeClock()
+    player = MockPlayer()
+    app = TVApp(config, player, InputManager([]), clock=clock)
+    app.start()
+    number = app.lineup.current.number
+    assert app.lineup.current.name.lower() == "stitch"
+    pool.rename(tmp_path / "usb-away")
+    app.step()
+    assert app.lineup.current.number == number
+    assert app.lineup.current.is_empty
+    (tmp_path / "usb-away").rename(pool)
+    app.step()
+    assert app.lineup.current.number == number
+    assert app.lineup.current.name.lower() == "stitch"
+    assert player.current is not None
+
+
+def test_finishing_last_episode_picks_up_new_file(tmp_path, monkeypatch):
+    import nostalgiabox.channel as channel_mod
+
+    monkeypatch.setattr(channel_mod, "probe_duration", lambda p: 10.0)
+    pool = tmp_path / "usb"
+    show = pool / "Stitch"
+    show.mkdir(parents=True)
+    (show / "s01e01.mp4").write_bytes(b"x")
+    config = config_from_dict(
+        {
+            "mixed": {"path": str(pool), "count": 10, "first_number": 1},
+            "state_path": str(tmp_path / "map.json"),
+            "start_channel": 1,
+            "tune_in": "broadcast",
+            "start_offset": 0,
+            "bridge_seconds": 0,
+            "power_off_command": [],
+        }
+    )
+    player = MockPlayer()
+    app = TVApp(config, player, InputManager([]), clock=FakeClock())
+    app.start()
+    (show / "s01e02.mp4").write_bytes(b"x")
+    player.finish_current(END_EOF)
+    app._drain_playback_events()
+    assert player.current is not None
+    assert player.current.name == "s01e02.mp4"
 
 
 def test_quit_stops_running(tmp_path):

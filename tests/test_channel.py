@@ -151,8 +151,9 @@ def test_broadcast_schedule_positions():
     eps = [Path("a.mp4"), Path("b.mp4"), Path("c.mp4")]
     durs = [100.0, 200.0, 300.0]
     sched = BroadcastSchedule(eps, durs, epoch=0.0, rng=random.Random(0))
-    # At t=0 we are at the start of the first item in the (shuffled) order.
+    # At t=0 we are at the start of the first item in air order.
     first = sched.at(0.0)
+    assert first.path == eps[0]
     assert first.start == 0.0
     # The schedule is a loop of total length 600s; t=600 == t=0.
     assert sched.at(600.0).path == first.path
@@ -220,9 +221,118 @@ def test_deal_round_robin_spreads_overflow():
     eps = [Path(f"v{i}.mp4") for i in range(25)]
     buckets = deal_episodes(eps, 10, random.Random(1))
     sizes = [len(b) for b in buckets]
-    assert sorted(sizes)[-1] - sorted(sizes)[0] <= 1
+    assert all(s >= 1 for s in sizes)
     flat = [p for b in buckets for p in b]
     assert len(set(flat)) == 25
+
+
+def test_sticky_show_keeps_channel_when_library_grows(tmp_path):
+    from nostalgiabox.channel import deal_episodes
+
+    stitch = tmp_path / "Stitch"
+    stitch.mkdir()
+    (stitch / "s01e01.mp4").write_bytes(b"x")
+    mapping: dict = {}
+    first = deal_episodes(
+        list(stitch.iterdir()),
+        10,
+        random.Random(0),
+        root=tmp_path,
+        mapping=mapping,
+        channel_numbers=list(range(1, 11)),
+    )
+    stitch_ch = next(i for i, b in enumerate(first) if b)
+    (stitch / "s01e02.mp4").write_bytes(b"x")
+    poke = tmp_path / "Pokemon"
+    poke.mkdir()
+    (poke / "s01e01.mp4").write_bytes(b"x")
+    files = list(stitch.iterdir()) + list(poke.iterdir())
+    second = deal_episodes(
+        files,
+        10,
+        random.Random(99),
+        root=tmp_path,
+        mapping=mapping,
+        channel_numbers=list(range(1, 11)),
+    )
+    assert [p.name for p in second[stitch_ch]] == ["s01e01.mp4", "s01e02.mp4"]
+    poke_ch = next(i for i, b in enumerate(second) if b and b[0].parent.name == "Pokemon")
+    assert poke_ch != stitch_ch
+
+
+def test_lineup_sticky_across_rebuild(tmp_path):
+    pool = tmp_path / "pool"
+    (pool / "Stitch").mkdir(parents=True)
+    (pool / "Stitch" / "s01e01.mp4").write_bytes(b"x")
+    state = tmp_path / "map.json"
+    data = {
+        "mixed": {"path": str(pool), "count": 10, "first_number": 1},
+        "state_path": str(state),
+    }
+    a = build_lineup(config_from_dict(data))
+    stitch_a = next(c for c in a if c.episodes)
+    assert stitch_a.name.lower() == "stitch"
+    (pool / "Pokemon").mkdir()
+    (pool / "Pokemon" / "s01e01.mp4").write_bytes(b"x")
+    b = build_lineup(config_from_dict(data))
+    stitch_b = next(c for c in b if c.number == stitch_a.number)
+    assert [p.parent.name for p in stitch_b.episodes] == ["Stitch"]
+    poke = next(c for c in b if c.episodes and c.number != stitch_a.number)
+    assert poke.name.lower() == "pokemon"
+
+
+def test_pack_extra_shows_when_all_channels_full(tmp_path):
+    from nostalgiabox.channel import deal_episodes
+
+    files = []
+    for i in range(12):
+        folder = tmp_path / f"Show{i:02d}"
+        folder.mkdir()
+        p = folder / "e01.mp4"
+        p.write_bytes(b"x")
+        files.append(p)
+    mapping: dict = {}
+    buckets = deal_episodes(
+        files,
+        10,
+        random.Random(0),
+        root=tmp_path,
+        mapping=mapping,
+        channel_numbers=list(range(1, 11)),
+    )
+    flat = [p for b in buckets for p in b]
+    assert len(flat) == 12
+    assert len(set(flat)) == 12
+    assert len(mapping) == 12
+
+
+def test_air_order_max_three_then_other_show(tmp_path):
+    from nostalgiabox.channel import air_order
+
+    stitch = tmp_path / "Stitch"
+    poke = tmp_path / "Pokemon"
+    stitch.mkdir()
+    poke.mkdir()
+    for i in range(1, 6):
+        (stitch / f"s01e{i:02d}.mp4").write_bytes(b"x")
+        (poke / f"s01e{i:02d}.mp4").write_bytes(b"x")
+    eps = list(stitch.iterdir()) + list(poke.iterdir())
+    order = air_order(eps, random.Random(0), root=tmp_path, block_size=3)
+    assert len(order) == 10
+    shows = [p.parent.name for p in order]
+    run = 1
+    max_run = 1
+    for a, b in zip(shows, shows[1:]):
+        if a == b:
+            run += 1
+            max_run = max(max_run, run)
+        else:
+            run = 1
+    assert max_run <= 3
+    # Pokemon is first alphabetically: 3 poke, 3 stitch, remaining poke, remaining stitch
+    assert shows[:3] == ["Pokemon", "Pokemon", "Pokemon"]
+    assert shows[3:6] == ["Stitch", "Stitch", "Stitch"]
+    assert "s01e04.mp4" in {p.name for p in order[6:] if p.parent.name == "Pokemon"}
 
 
 def test_mixed_pool_lineup(tmp_path):
@@ -279,3 +389,55 @@ def test_lineup_sorted_by_number(tmp_path):
     )
     lineup = build_lineup(cfg)
     assert lineup.numbers == [3, 9]
+
+
+def test_series_prefix_groups_episodes():
+    from nostalgiabox.channel import series_prefix, show_key
+    from pathlib import Path
+
+    assert series_prefix("Pokemon S01E02") == "Pokemon"
+    assert series_prefix("stitch_ep03") == "stitch"
+    assert series_prefix("s1e1") == "s1e1"
+    root = Path("/media/pool")
+    assert show_key(root / "Stitch" / "s01e09.mp4", root) == "stitch"
+    assert show_key(root / "Pokemon" / "s01e01.mp4", root) == "pokemon"
+
+
+def test_deal_keeps_show_episodes_in_order(tmp_path):
+    from nostalgiabox.channel import deal_episodes
+
+    stitch = tmp_path / "Stitch"
+    poke = tmp_path / "Pokemon"
+    stitch.mkdir()
+    poke.mkdir()
+    for name in ("s01e10.mp4", "s01e01.mp4", "s01e02.mp4"):
+        (stitch / name).write_bytes(b"x")
+    (poke / "s01e01.mp4").write_bytes(b"x")
+    eps = list(stitch.iterdir()) + list(poke.iterdir())
+    buckets = deal_episodes(eps, 10, random.Random(0), root=tmp_path)
+    stitch_bucket = next(b for b in buckets if b and b[0].parent.name == "Stitch")
+    assert [p.name for p in stitch_bucket] == ["s01e01.mp4", "s01e02.mp4", "s01e10.mp4"]
+
+
+def test_broadcast_plays_show_in_file_order(tmp_path, monkeypatch):
+    import nostalgiabox.channel as channel_mod
+    from nostalgiabox.config import ChannelConfig
+
+    monkeypatch.setattr(channel_mod, "probe_duration", lambda p: 10.0)
+    folder = tmp_path / "Stitch"
+    folder.mkdir()
+    for name in ("s01e02.mp4", "s01e01.mp4"):
+        (folder / name).write_bytes(b"x")
+    cfg = ChannelConfig(number=1, name="K", path=folder)
+    ch = Channel(
+        cfg,
+        scan_episodes(folder, [".mp4"]),
+        tune_in="broadcast",
+        rng=random.Random(0),
+        broadcast_epoch=0.0,
+    )
+    r1 = ch.tune_in(now=0.0)
+    r2 = ch.tune_in(now=10.0)
+    assert r1.path.name == "s01e01.mp4"
+    assert r2.path.name == "s01e02.mp4"
+    assert ch.next_path(r1.path).name == "s01e02.mp4"

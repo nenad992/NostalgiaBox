@@ -67,6 +67,7 @@ class TVApp:
         self.hdmi_idle = False
         self._hdmi_lost_at: Optional[float] = None
         self._hdmi_signal = hdmi_signal_present
+        self._media_present = self._library_present()
         self._playing_path: Optional[Path] = None
         self._last_channel_number: Optional[int] = None
         self._running = False
@@ -81,6 +82,7 @@ class TVApp:
         # at the moment of the cut-over, not when the button is pressed.
         self._switch_deadline: Optional[float] = None
         self._pending_banner: Optional[tuple[int, str]] = None
+        self._pending_request: Optional[PlayRequest] = None
 
         # Playback-finished events from the player (may arrive on any thread).
         self._ended: "queue.Queue[str]" = queue.Queue()
@@ -175,6 +177,7 @@ class TVApp:
         """
         now = self._clock()
         self.overlay.tick()
+        self._tick_library()
         self._tick_hdmi_idle(now)
         self._maybe_commit_switch(now)
         self._maybe_commit_digits(now)
@@ -204,7 +207,10 @@ class TVApp:
             # Flash the channel banner right as the picture actually changes.
             if self._pending_banner is not None:
                 self.overlay.show_channel_bug(*self._pending_banner)
+                if self._pending_request is not None:
+                    self._flash_guide(self.lineup.current, self._pending_request)
                 self._pending_banner = None
+                self._pending_request = None
 
     # -- input handling -----------------------------------------------------
     def handle_event(self, event: InputEvent) -> None:
@@ -286,6 +292,7 @@ class TVApp:
 
         request = channel.tune_in()
         self._pending_banner = None
+        self._pending_request = None
 
         if request is None:
             # No episodes on this channel: show the "no signal" screen.
@@ -296,12 +303,12 @@ class TVApp:
         if not show_static:
             # Not a channel change (first tune / waking from standby): play now.
             self._switch_deadline = None
-            self.overlay.show_channel_bug(channel.number, channel.name)
+            self._flash_tune_osd(channel, request)
             self._play_request(request)
         elif self._transition_path is not None:
             # Transition clip (glitch/static) + preloaded episode.
             self._switch_deadline = None
-            self.overlay.show_channel_bug(channel.number, channel.name)
+            self._flash_tune_osd(channel, request)
             self._playing_path = request.path
             self.player.play_transition(
                 self._transition_path,
@@ -317,18 +324,28 @@ class TVApp:
             self.player.preload_next(request.path, start=request.start)
             self._switch_deadline = self._clock() + self.config.bridge_seconds
             self._pending_banner = (channel.number, channel.name)
+            self._pending_request = request
         else:
             self._switch_deadline = None
-            self.overlay.show_channel_bug(channel.number, channel.name)
+            self._flash_tune_osd(channel, request)
             self._play_request(request)
 
     def _play_request(self, request: PlayRequest) -> None:
         self._playing_path = request.path
         self.player.play(request.path, start=request.start)
 
+    def _flash_tune_osd(self, channel: Channel, request: PlayRequest) -> None:
+        self.overlay.show_channel_bug(channel.number, channel.name)
+        self._flash_guide(channel, request)
+
+    def _flash_guide(self, channel: Channel, request: PlayRequest) -> None:
+        nxt = channel.next_path(request.path)
+        self.overlay.show_guide(request.path.stem, nxt.stem)
+
     def _show_no_signal(self, channel: Channel) -> None:
         self._switch_deadline = None
         self._pending_banner = None
+        self._pending_request = None
         self._playing_path = None
         if self._colorbars_path is not None:
             self.player.play_loop(self._colorbars_path)
@@ -357,6 +374,7 @@ class TVApp:
         self.powered_off = True
         self._switch_deadline = None
         self._pending_banner = None
+        self._pending_request = None
         try:
             self.overlay.clear_all()
             self.overlay.show_message("GOODBYE", duration=0)
@@ -384,6 +402,8 @@ class TVApp:
     def _show_info(self) -> None:
         channel = self.lineup.current
         self.overlay.show_channel_bug(channel.number, channel.name)
+        if self._playing_path is not None:
+            self._flash_guide(channel, PlayRequest(self._playing_path))
 
     def _toggle_standby(self) -> None:
         self.standby = not self.standby
@@ -391,6 +411,7 @@ class TVApp:
             self._remember_position()
             self._switch_deadline = None
             self._pending_banner = None
+            self._pending_request = None
             self.player.stop()
             self.overlay.clear_all()
             self.overlay.show_standby()
@@ -425,6 +446,7 @@ class TVApp:
         self.hdmi_idle = True
         self._switch_deadline = None
         self._pending_banner = None
+        self._pending_request = None
         self._playing_path = None
         self.player.stop()
         self.overlay.clear_all()
@@ -470,11 +492,48 @@ class TVApp:
                 advanced = True
 
     def _advance_current(self) -> None:
-        request = self.lineup.current.advance()
+        channel = self.lineup.current
+        current = self._playing_path
+        if current is not None and channel.ends_cycle(current):
+            self._refresh_library()
+            channel = self.lineup.current
+        if current is not None:
+            request = channel.play_after(current)
+        else:
+            request = channel.advance()
         if request is None:
             self._show_no_signal(self.lineup.current)
         else:
             self._play_request(request)
+
+    def _library_present(self) -> bool:
+        mixed = self.config.mixed
+        if mixed is None:
+            return True
+        try:
+            return mixed.path.is_dir()
+        except OSError:
+            return False
+
+    def _refresh_library(self) -> None:
+        current_number = self.lineup.current.number
+        self.lineup = build_lineup(self.config)
+        if self.lineup.has_number(current_number):
+            self.lineup.select_number(current_number)
+        log.info("library rescanned; %d channels", len(self.lineup))
+
+    def _tick_library(self) -> None:
+        present = self._library_present()
+        if present == self._media_present:
+            return
+        self._media_present = present
+        if present:
+            log.info("media folder is back; remapping library")
+        else:
+            log.info("media folder missing (USB unplugged?)")
+        self._refresh_library()
+        if not self.standby and not self.hdmi_idle:
+            self.tune_current(show_static=False)
 
     # -- helpers ------------------------------------------------------------
     def _remember_position(self) -> None:
