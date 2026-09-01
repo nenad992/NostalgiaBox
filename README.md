@@ -333,6 +333,18 @@ pytest
 python -m nostalgiabox --dry-run --config config.yaml   # keyboard-controlled, no video
 ```
 
+### Local development with Tilt (laptop, not the Pi)
+
+This does **not** change how the Raspberry Pi is installed or how `config.yaml`
+on the device works. It runs the same app in a window on your computer.
+
+1. Install [Tilt](https://docs.tilt.dev/install.html) and mpv (`brew install tilt mpv` on a Mac).
+2. `python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev,local]"`
+3. Put real episodes in `dev/media/<show name>/` (one folder per channel).
+4. Run `tilt up` and open the Tilt UI. An **mpv window** is the TV; Tilt buttons are the remote (CH+, volume, mute, …).
+
+If mpv / `python-mpv` is missing, the `tv` resource in Tilt will fail until you install them. Empty dummy `.mp4` files are detected as episodes but will not show a picture.
+
 ```
 nostalgiabox/
 ├── config.py      YAML -> validated config

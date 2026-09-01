@@ -113,6 +113,15 @@ def test_ui_and_crt_defaults(tmp_path):
     assert cfg.transition_effect == "none"
     assert cfg.transition_duration == 0.4
     assert cfg.bridge_seconds == 0.8
+    assert cfg.fullscreen is True  # Pi / TV default; Tilt sets false
+
+
+def test_fullscreen_override(tmp_path):
+    make_show(tmp_path, "a", 1)
+    cfg = config_from_dict(
+        {"channels": [{"path": str(tmp_path / "a")}], "fullscreen": False}
+    )
+    assert cfg.fullscreen is False
 
 
 def test_start_offset_forms(tmp_path):

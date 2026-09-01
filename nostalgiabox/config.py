@@ -132,6 +132,9 @@ class Config:
     # Options for the input backends (see input/manager.create_backends).
     input_options: Mapping[str, Any] = field(default_factory=dict)
 
+    # mpv window: True on a Pi/TV; set false for a windowed laptop / Tilt loop.
+    fullscreen: bool = True
+
     def channel_numbers(self) -> List[int]:
         return [c.number for c in self.channels]
 
@@ -329,6 +332,7 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
         shuffle_seed=(int(data["shuffle_seed"]) if data.get("shuffle_seed") is not None else None),
         assets_dir=assets_dir,
         input_options=dict(data.get("input") or {}),
+        fullscreen=bool(data.get("fullscreen", True)),
     )
 
 

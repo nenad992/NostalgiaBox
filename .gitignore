@@ -16,6 +16,17 @@ config.yaml
 # Generated filler clips (created by `nostalgiabox --generate-assets`).
 nostalgiabox/assets/*.mp4
 
+# Local Tilt media (keep folder structure; do not commit episodes)
+dev/media/**/*.mp4
+dev/media/**/*.mkv
+dev/media/**/*.avi
+dev/media/**/*.m4v
+dev/media/**/*.mov
+dev/media/**/*.webm
+dev/media/**/*.mpg
+dev/media/**/*.mpeg
+dev/media/**/*.ts
+
 # OS cruft
 .DS_Store
 Thumbs.db

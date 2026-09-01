@@ -1,0 +1,26 @@
+# Config used only by `tilt up` on a development machine.
+# The Raspberry Pi still uses config.yaml (from config.example.yaml).
+#
+# Put one folder per channel under media_root, with real video files inside:
+#   dev/media/Dragon Tales/S01E01.mp4
+
+media_root: dev/media
+first_channel_number: 2
+
+tune_in: random
+start_offset: [6, 10]
+transition: none
+bridge_seconds: 0.8
+
+fullscreen: false
+power_off_on_min_volume: false
+
+input:
+  keyboard: false
+  cec: false
+  stdin: false
+  dev_http: true
+  dev_http_port: 8765
+
+crt:
+  enabled: true

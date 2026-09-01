@@ -70,6 +70,8 @@ def create_backends(options: Optional[Dict] = None) -> List[InputBackend]:
         keyboard_grab: false
         cec_binary: cec-client
         cec_osd_name: NostalgiaBox
+        dev_http: false           # loopback HTTP remote (Tilt / laptop)
+        dev_http_port: 8765
 
     Backends that are requested but unavailable on this machine are quietly
     skipped, so the same config works on the Pi and on a dev laptop.
@@ -118,7 +120,31 @@ def create_backends(options: Optional[Dict] = None) -> List[InputBackend]:
         if StdinBackend.is_available():
             backends.append(StdinBackend())
 
+    http_port = _dev_http_port(options)
+    if http_port is not None:
+        from .dev_http import DevHttpBackend
+
+        backends.append(DevHttpBackend(port=http_port))
+
     return backends
+
+
+def _dev_http_port(options: Dict) -> Optional[int]:
+    """Return the loopback bind port when ``dev_http`` is enabled, else None.
+
+    Accepts ``dev_http: true`` plus optional ``dev_http_port``, or a mapping
+    ``dev_http: {enabled: true, port: 8765}``. Port ``0`` asks the OS for an
+    ephemeral port (tests).
+    """
+    raw = options.get("dev_http", False)
+    default_port = int(options.get("dev_http_port", 8765))
+    if isinstance(raw, dict):
+        if not raw.get("enabled", True):
+            return None
+        return int(raw.get("port", default_port))
+    if raw:
+        return default_port
+    return None
 
 
 __all__ = ["InputManager", "create_backends"]

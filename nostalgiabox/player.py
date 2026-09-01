@@ -15,6 +15,7 @@ the interesting logic in ``app.py`` never has to know which one it is using.
 from __future__ import annotations
 
 import logging
+import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
@@ -101,6 +102,56 @@ class Player(ABC):
     def close(self) -> None:
         """Release resources."""
 
+    def pump_events(self, timeout: float = 0.02) -> None:
+        """Service OS window events. No-op except where the VO needs it (macOS)."""
+
+
+def mpv_player_options(
+    *,
+    fullscreen: bool = True,
+    hwdec: str = "auto-safe",
+    glsl_shaders: Optional[str] = None,
+    force_4_3: bool = True,
+    audio_device: Optional[str] = None,
+    extra_options: Optional[dict] = None,
+) -> dict:
+    """libmpv constructor kwargs.
+
+    ``force_window=yes`` opens the picture window once something is playing.
+    python-mpv on this libmpv rejects ``immediate`` at init (error -4), so we
+    keep a file playing (colour bars on empty channels) instead.
+    """
+    options: dict = dict(
+        osc=False,
+        input_default_bindings=False,
+        input_vo_keyboard=False,
+        idle="yes",
+        force_window="yes",
+        keep_open="yes",
+        prefetch_playlist="yes",
+        fullscreen=fullscreen,
+        hwdec=hwdec,
+        keepaspect="yes",
+        video_unscaled="no",
+        cursor_autohide="always",
+        osd_font_size=40,
+    )
+    if not fullscreen:
+        options["geometry"] = "1280x720"
+        options["title"] = "NostalgiaBox"
+    if audio_device:
+        options["audio_device"] = audio_device
+    if glsl_shaders:
+        options["glsl_shaders"] = glsl_shaders
+    if force_4_3:
+        options["vf"] = (
+            "lavfi=[scale=960:720:force_original_aspect_ratio=decrease,"
+            "pad=960:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1]"
+        )
+    if extra_options:
+        options.update(extra_options)
+    return options
+
 
 class MpvPlayer(Player):
     """A :class:`Player` backed by libmpv, tuned for a Raspberry Pi + TV."""
@@ -130,64 +181,20 @@ class MpvPlayer(Player):
         if fonts_dir is not None:
             _install_fonts_for_mpv(fonts_dir)
 
-        options = dict(
-            # We drive the OSD ourselves, so disable mpv's own on-screen
-            # controller and default keybindings.
-            osc=False,
-            input_default_bindings=False,
-            input_vo_keyboard=False,
-            # Keep a window alive even with nothing playing so the screen never
-            # drops to a console/desktop between episodes or on an empty channel.
-            idle="yes",
-            force_window="yes",
-            # keep-open=yes means a file that reaches its end PAUSES on the last
-            # frame and sets the "eof-reached" property instead of silently
-            # unloading. We watch that property to roll the next episode. This
-            # avoids a nasty race: replacing a file (on a channel change) also
-            # fires an "end-file" event for the outgoing file, and its reason is
-            # unreliable across mpv versions - reacting to it caused episodes to
-            # be skipped or the picture to hang. "eof-reached" only ever trips on
-            # a genuine end-of-file, so it is the robust signal.
-            keep_open="yes",
-            # Preload the next playlist entry while the current one plays. This
-            # is what makes channel changes near-instant: during the ~0.5s of
-            # static, mpv is already opening/decoding the episode, so it appears
-            # the moment the static ends (see play_transition).
-            prefetch_playlist="yes",
-            fullscreen=fullscreen,
-            # Hardware decode + a sensible video output for the Pi. gpu with the
-            # drm context works headless on the Pi 4; libmpv falls back sanely.
-            hwdec=hwdec,
-            # 4:3 shows should be pillarboxed (not stretched) inside the frame.
-            keepaspect="yes",
-            video_unscaled="no",
-            # Hide the mouse cursor - this is a TV, not a computer.
-            cursor_autohide="always",
-            # A pleasant, readable OSD font size relative to the window.
-            osd_font_size=40,
-        )
-        if audio_device:
-            # Force audio to a specific output (e.g. HDMI) instead of mpv's
-            # default (which can pick the 3.5mm jack on a Raspberry Pi).
-            options["audio_device"] = audio_device
-        if glsl_shaders:
-            # CRT curvature/rounding/vignette/scanlines. Applied globally (always
-            # on) so a newly-loaded episode is never shown for a frame or two
-            # without the effect on a channel change.
-            options["glsl_shaders"] = glsl_shaders
-        if force_4_3:
-            # Fit ANY source into a 4:3 raster (letterboxing 16:9 with black
-            # bars), so every show - and the static/colour-bar clips - appears in
-            # the same 4:3 tube-TV frame. mpv then pillarboxes that 4:3 image on
-            # a 16:9 TV, and the CRT shader curves it.
-            options["vf"] = (
-                "lavfi=[scale=960:720:force_original_aspect_ratio=decrease,"
-                "pad=960:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1]"
+        self._mpv = mpv.MPV(
+            **mpv_player_options(
+                fullscreen=fullscreen,
+                hwdec=hwdec,
+                glsl_shaders=glsl_shaders,
+                force_4_3=force_4_3,
+                audio_device=audio_device,
+                extra_options=extra_options,
             )
-        if extra_options:
-            options.update(extra_options)
+        )
+        if sys.platform == "darwin":
+            from .macos_cocoa import ensure_nsapplication
 
-        self._mpv = mpv.MPV(**options)
+            ensure_nsapplication()
         self._closed = False
         # True while a looping filler clip (static / colour bars) is showing, so
         # its (non-)ending never advances the channel.
@@ -345,6 +352,13 @@ class MpvPlayer(Player):
             self._mpv.command("osd-overlay", overlay_id, "none", "")
         except Exception:  # noqa: BLE001
             log.debug("clearing overlay failed", exc_info=True)
+
+    def pump_events(self, timeout: float = 0.02) -> None:
+        if sys.platform != "darwin":
+            return
+        from .macos_cocoa import pump
+
+        pump(timeout)
 
     def close(self) -> None:
         if self._closed:
@@ -521,6 +535,7 @@ def _strip_ass(ass: str) -> str:  # pragma: no cover - trivial
 
 
 __all__ = [
+    "mpv_player_options",
     "Player",
     "MpvPlayer",
     "MockPlayer",

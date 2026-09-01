@@ -115,6 +115,7 @@ class TVApp:
                 assets = assets_dir or config.assets_dir or DEFAULT_ASSETS_DIR
                 shader_path = write_shader(config.crt)
                 player = MpvPlayer(
+                    fullscreen=config.fullscreen,
                     glsl_shaders=str(shader_path) if shader_path else None,
                     fonts_dir=assets / "fonts",
                     force_4_3=config.force_4_3,
@@ -174,7 +175,19 @@ class TVApp:
         self._maybe_commit_digits(now)
         self._drain_playback_events()
 
-        event = self.input.get(timeout=timeout if block else 0.0)
+        if block:
+            event = None
+            remaining = timeout
+            while event is None and remaining > 0:
+                # libmpv on macOS only maps its window if Cocoa is pumped on
+                # the main thread; InputManager.get() would otherwise starve it.
+                self.player.pump_events(min(0.02, remaining))
+                slice_timeout = min(0.02, remaining)
+                event = self.input.get(timeout=slice_timeout)
+                remaining -= slice_timeout
+        else:
+            self.player.pump_events(0.0)
+            event = self.input.get(timeout=0.0)
         if event is not None:
             self.handle_event(event)
 

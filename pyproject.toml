@@ -28,6 +28,10 @@ pi = [
 dev = [
     "pytest>=7.0",
 ]
+# Laptop / Tilt loop: real mpv window, no Linux evdev.
+local = [
+    "python-mpv>=1.0.5",
+]
 
 [project.scripts]
 nostalgiabox = "nostalgiabox.__main__:main"

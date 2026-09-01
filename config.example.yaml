@@ -109,6 +109,9 @@ crt:
 # --- Audio -------------------------------------------------------------------
 initial_volume: 70        # 0-100
 volume_step: 5            # how much each volume press changes it
+# Fullscreen mpv (true on a Pi/TV). Set false for a windowed laptop / Tilt loop.
+# fullscreen: true
+
 # Force audio to a specific output. On a Pi the default can be the 3.5mm jack;
 # for a TV you want HDMI. Run `nostalgiabox --list-audio` to see the names.
 # audio_device: "alsa/hdmi:CARD=vc4hdmi0,DEV=0"   # HDMI0 (use vc4hdmi1 for HDMI1)
@@ -130,6 +133,9 @@ input:
   keyboard: true          # USB/IR remotes & keyboards (via Linux evdev)
   cec: true               # the TV's own remote over HDMI-CEC (needs cec-utils)
   stdin: false            # developer keyboard over the terminal
+  # Laptop / Tilt only (loopback HTTP remote). Leave off on the Pi.
+  # dev_http: false
+  # dev_http_port: 8765
   # keyboard_name_filter: "remote"   # only listen to devices whose name matches
   # keyboard_devices: ["/dev/input/event0"]  # or pin exact devices
   # keyboard_grab: false             # true = stop keystrokes leaking to console
