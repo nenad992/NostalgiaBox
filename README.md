@@ -181,16 +181,12 @@ keys to the Pi instead of ignoring them.
    |-----------|----------------|
    | Up / Channel+ | Channel up |
    | Down / Channel− | Channel down |
-   | Right / Volume+ | Box volume up |
-   | Left / Volume− | Box volume down |
-   | Mute | Mute |
    | Numbers | Jump to channel |
    | Back / Exit | Last channel |
    | Power | Standby |
 
-**Volume buttons:** many TVs keep Vol+/Vol− for the TV speakers and never send
-them over CEC. That is normal. Use **left/right** on the D-pad for the box
-volume, or the TV's own volume if HDMI audio is already loud enough.
+**Volume and mute** stay on the TV. NostalgiaBox does not steal Vol+/Vol−,
+mute, or left/right, so the set keeps its own speakers.
 
 CEC is not identical on every set. If keys do nothing, confirm CEC is on, the
 Pi is the selected HDMI source, and check `journalctl -u nostalgiabox -f`
@@ -259,15 +255,11 @@ Now the box boots straight to TV whenever it gets power — no login, no menus.
 
 ### Part J — Make it kid-proof (recommended)
 
-Kids will unplug it. Two things keep the SD card from getting corrupted:
+Kids will unplug it. Enable **read-only mode** so the SD card is not corrupted:
 
-- **Turn it off with the remote:** turn the volume all the way down to 0, then
-  press volume-down **once more** — the Pi shuts down cleanly ("GOODBYE"), and
-  it's safe to unplug once the green light stops blinking.
-- **Read-only mode (belt-and-suspenders):** run `sudo raspi-config` →
-  **Performance Options → Overlay File System → Enable** (and write-protect the
-  boot partition). This makes the SD read-only, so pulling the plug can *never*
-  corrupt it. (To update later, disable the overlay, update, then re-enable it.)
+run `sudo raspi-config` → **Performance Options → Overlay File System → Enable**
+(and write-protect the boot partition). Pulling the plug then cannot corrupt
+the card. (To update later, disable the overlay, update, then re-enable it.)
 
 **Done!** Plug it in and enjoy your nostalgia box.
 
@@ -277,11 +269,9 @@ Kids will unplug it. Two things keep the SD card from getting corrupted:
 
 | Do this | On the remote |
 |---------|---------------|
-| Change channels | Channel up / down |
-| Adjust volume | Volume up / down |
-| Mute | Mute |
+| Change channels | Channel up / down (TV remote over CEC) |
+| Adjust volume / mute | The TV's own volume buttons |
 | Standby (blank screen) | Power |
-| **Turn off** (safe to unplug) | Volume-down again when already at 0 |
 
 Turn it on by plugging in power; it boots back to a channel automatically.
 

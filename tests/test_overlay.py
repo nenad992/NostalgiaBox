@@ -5,8 +5,8 @@ from nostalgiabox.overlay import OverlayManager
 from nostalgiabox.player import MockPlayer
 from tests.helpers import FakeClock, make_show
 
-# The 4:3 frame within the 1280x720 canvas spans x in [160, 1120].
-_FRAME_X0, _FRAME_X1 = 160, 1120
+# OSD uses the full 1280x720 canvas with a 6% safe inset (rounded-corner margin).
+_SAFE_X0, _SAFE_X1 = 76, 1204
 
 
 def _all_x_positions(ass: str):
@@ -99,20 +99,20 @@ def test_message_overlay(tmp_path):
     assert "NO CHANNEL" in player.overlays[4]
 
 
-def test_channel_bug_sits_inside_4x3_frame(tmp_path):
+def test_channel_bug_sits_in_fullscreen_safe_area(tmp_path):
     player = MockPlayer()
     om = OverlayManager(player, _config(tmp_path), clock=FakeClock())
     om.show_channel_bug(3, "Arthur")
     xs = _all_x_positions(player.overlays[1])
-    assert xs and all(_FRAME_X0 <= x <= _FRAME_X1 for x in xs)
+    assert xs and all(_SAFE_X0 <= x <= _SAFE_X1 for x in xs)
 
 
-def test_volume_bar_sits_inside_4x3_frame(tmp_path):
+def test_volume_bar_sits_in_fullscreen_safe_area(tmp_path):
     player = MockPlayer()
     om = OverlayManager(player, _config(tmp_path), clock=FakeClock())
-    om.show_volume(100, muted=False)  # widest case: all 20 bars drawn
+    om.show_volume(100, muted=False)
     xs = _all_x_positions(player.overlays[2])
-    assert xs and all(_FRAME_X0 <= x <= _FRAME_X1 for x in xs)
+    assert xs and all(_SAFE_X0 <= x <= _SAFE_X1 for x in xs)
 
 
 def test_overlay_uses_configured_font_and_color(tmp_path):

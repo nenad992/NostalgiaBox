@@ -72,7 +72,7 @@ volume_step: 5
 
 # audio_device: "alsa/hdmi:CARD=vc4hdmi0,DEV=0"
 
-power_off_on_min_volume: true
+power_off_on_min_volume: false
 
 scan_recursive: true
 # shuffle_seed: 1234

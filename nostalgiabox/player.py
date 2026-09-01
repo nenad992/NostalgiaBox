@@ -111,7 +111,7 @@ def mpv_player_options(
     fullscreen: bool = True,
     hwdec: str = "auto-safe",
     glsl_shaders: Optional[str] = None,
-    force_4_3: bool = True,
+    force_4_3: bool = False,
     audio_device: Optional[str] = None,
     extra_options: Optional[dict] = None,
 ) -> dict:
@@ -133,6 +133,7 @@ def mpv_player_options(
         hwdec=hwdec,
         keepaspect="yes",
         video_unscaled="no",
+        panscan=1.0,
         cursor_autohide="always",
         osd_font_size=40,
     )
@@ -144,6 +145,7 @@ def mpv_player_options(
     if glsl_shaders:
         options["glsl_shaders"] = glsl_shaders
     if force_4_3:
+        options.pop("panscan", None)
         options["vf"] = (
             "lavfi=[scale=960:720:force_original_aspect_ratio=decrease,"
             "pad=960:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1]"
@@ -163,7 +165,7 @@ class MpvPlayer(Player):
         hwdec: str = "auto-safe",
         glsl_shaders: Optional[str] = None,
         fonts_dir: Optional[Path] = None,
-        force_4_3: bool = True,
+        force_4_3: bool = False,
         audio_device: Optional[str] = None,
         extra_options: Optional[dict] = None,
     ) -> None:

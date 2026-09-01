@@ -15,6 +15,8 @@ def test_evdev_channel_and_volume():
     assert evdev_key_to_event("KEY_PAGEUP").action == Action.CHANNEL_UP
     assert evdev_key_to_event("KEY_UP").action == Action.CHANNEL_UP
     assert evdev_key_to_event("KEY_VOLUMEDOWN").action == Action.VOLUME_DOWN
+    assert evdev_key_to_event("KEY_LEFT") is None
+    assert evdev_key_to_event("KEY_RIGHT") is None
     assert evdev_key_to_event("KEY_MUTE").action == Action.MUTE
 
 
@@ -47,8 +49,8 @@ def test_stdin_chars():
 def test_stdin_arrows():
     assert stdin_escape_to_event("[A").action == Action.CHANNEL_UP
     assert stdin_escape_to_event("[B").action == Action.CHANNEL_DOWN
-    assert stdin_escape_to_event("[C").action == Action.VOLUME_UP
-    assert stdin_escape_to_event("[D").action == Action.VOLUME_DOWN
+    assert stdin_escape_to_event("[C") is None
+    assert stdin_escape_to_event("[D") is None
     assert stdin_escape_to_event("[Z") is None
 
 
@@ -94,7 +96,8 @@ def test_keyboard_backend_override_precedence():
 
 def test_cec_keys():
     assert cec_key_to_event("channel up").action == Action.CHANNEL_UP
-    assert cec_key_to_event("Volume Down").action == Action.VOLUME_DOWN
+    assert cec_key_to_event("Volume Down") is None
+    assert cec_key_to_event("left") is None
     assert cec_key_to_event("select").action == Action.ENTER
     assert cec_key_to_event("number 4").value == 4
     assert cec_key_to_event("power").action == Action.POWER

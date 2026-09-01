@@ -334,10 +334,6 @@ class TVApp:
         self._set_volume(self.volume + self.config.volume_step, unmute=True)
 
     def _volume_down(self) -> None:
-        # One press below zero cleanly powers off the box (safe to unplug).
-        if self.config.power_off_on_min_volume and not self.muted and self.volume <= 0:
-            self._power_off()
-            return
         self._set_volume(self.volume - self.config.volume_step, unmute=True)
 
     def _set_volume(self, value: int, *, unmute: bool = False) -> None:

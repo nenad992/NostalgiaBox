@@ -35,17 +35,12 @@ _CEC_OPERANDS: Dict[int, InputEvent] = {
     0x00: InputEvent(Action.ENTER),
     0x01: InputEvent(Action.CHANNEL_UP),
     0x02: InputEvent(Action.CHANNEL_DOWN),
-    0x03: InputEvent(Action.VOLUME_DOWN),
-    0x04: InputEvent(Action.VOLUME_UP),
     0x0D: InputEvent(Action.LAST_CHANNEL),
     0x30: InputEvent(Action.CHANNEL_UP),
     0x31: InputEvent(Action.CHANNEL_DOWN),
     0x32: InputEvent(Action.LAST_CHANNEL),
     0x35: InputEvent(Action.INFO),
     0x40: InputEvent(Action.POWER),
-    0x41: InputEvent(Action.VOLUME_UP),
-    0x42: InputEvent(Action.VOLUME_DOWN),
-    0x43: InputEvent(Action.MUTE),
 }
 for _d in range(10):
     _CEC_OPERANDS[0x20 + _d] = InputEvent.digit(_d)

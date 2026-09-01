@@ -83,16 +83,15 @@ def test_volume_clamps(tmp_path):
     assert app.volume == 0
 
 
-def test_volume_down_at_zero_powers_off(tmp_path):
+def test_volume_down_at_zero_does_not_power_off(tmp_path):
     app, player, _ = build_app(tmp_path, initial_volume=10, volume_step=5)
     app.start()
-    send(app, Action.VOLUME_DOWN)   # 10 -> 5
-    send(app, Action.VOLUME_DOWN)   # 5 -> 0
+    send(app, Action.VOLUME_DOWN)
+    send(app, Action.VOLUME_DOWN)
     assert app.volume == 0 and not app.powered_off
-    send(app, Action.VOLUME_DOWN)   # one more at 0 -> power off
-    assert app.powered_off is True
-    assert app._running is False
-    assert player.current is None   # playback stopped
+    send(app, Action.VOLUME_DOWN)
+    assert app.powered_off is False
+    assert app.volume == 0
 
 
 def test_power_off_disabled(tmp_path):

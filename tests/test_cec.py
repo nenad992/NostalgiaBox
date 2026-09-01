@@ -5,7 +5,10 @@ from nostalgiabox.input.keymap import cec_key_to_event
 
 def test_cec_named_keys():
     assert cec_key_to_event("channel up").action == Action.CHANNEL_UP
-    assert cec_key_to_event("Volume Down").action == Action.VOLUME_DOWN
+    assert cec_key_to_event("Volume Down") is None
+    assert cec_key_to_event("mute") is None
+    assert cec_key_to_event("left") is None
+    assert cec_key_to_event("right") is None
     assert cec_key_to_event("select").action == Action.ENTER
     assert cec_key_to_event("number 4").value == 4
     assert cec_key_to_event("power").action == Action.POWER
@@ -17,8 +20,7 @@ def test_cec_named_keys():
 def test_parse_cec_client_key_pressed_line():
     ev = parse_cec_line("DEBUG:   key pressed: up (1)")
     assert ev is not None and ev.action == Action.CHANNEL_UP
-    ev = parse_cec_line("TRAFFIC: [123] key pressed: volume up (41)")
-    assert ev is not None and ev.action == Action.VOLUME_UP
+    assert parse_cec_line("TRAFFIC: [123] key pressed: volume up (41)") is None
     assert parse_cec_line("key released: up (1)") is None
 
 
@@ -31,11 +33,13 @@ def test_parse_cec_user_control_pressed_hex():
     ev = parse_cec_line(">> 01:44:31")  # Channel Down
     assert ev is not None and ev.action == Action.CHANNEL_DOWN
     ev = parse_cec_line(">> 01:44:41")
-    assert ev is not None and ev.action == Action.VOLUME_UP
+    assert ev is None
     ev = parse_cec_line(">> 01:44:42")
-    assert ev is not None and ev.action == Action.VOLUME_DOWN
-    ev = parse_cec_line(">> 01:44:43")
-    assert ev is not None and ev.action == Action.MUTE
+    assert ev is None
+    ev = parse_cec_line(">> 01:44:03")
+    assert ev is None
+    ev = parse_cec_line(">> 01:44:04")
+    assert ev is None
     assert parse_cec_line(">> 01:45:01") is None  # released
     ev = parse_cec_line(">> 0f:44:20")
     assert ev is not None and ev.value == 0

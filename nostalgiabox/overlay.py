@@ -27,19 +27,13 @@ from .player import Player
 CANVAS_W = 1280
 CANVAS_H = 720
 
-# The video is forced into a 4:3 frame centred on the 16:9 canvas (see
-# MpvPlayer.force_4_3). We lay the OSD out *inside* that 4:3 frame - with a small
-# safe-area inset so nothing sits under the CRT's rounded corners - so the green
-# readouts always sit over the picture, never out in the black pillarbox bars.
-_FRAME_W = int(round(CANVAS_H * 4 / 3))        # 960
-_FRAME_X0 = (CANVAS_W - _FRAME_W) // 2          # 160
-_FRAME_X1 = _FRAME_X0 + _FRAME_W                # 1120
-_FRAME_CX = (_FRAME_X0 + _FRAME_X1) // 2        # 640
+# OSD sits on the full 16:9 canvas, inset so it clears the CRT rounded corners.
 _SAFE = 0.06
-_IX0 = _FRAME_X0 + int(_FRAME_W * _SAFE)        # ~217  (left safe edge)
-_IX1 = _FRAME_X1 - int(_FRAME_W * _SAFE)        # ~1062 (right safe edge)
-_IY0 = int(CANVAS_H * _SAFE)                     # ~43   (top safe edge)
-_IY1 = CANVAS_H - int(CANVAS_H * _SAFE)          # ~677  (bottom safe edge)
+_IX0 = int(CANVAS_W * _SAFE)
+_IX1 = CANVAS_W - int(CANVAS_W * _SAFE)
+_IY0 = int(CANVAS_H * _SAFE)
+_IY1 = CANVAS_H - int(CANVAS_H * _SAFE)
+_FRAME_CX = CANVAS_W // 2
 
 # Overlay slots (ids). Each kind of overlay owns one id so it can be replaced
 # or cleared independently.
@@ -177,7 +171,7 @@ def _volume_ass(level: int, muted: bool, ui: UiConfig) -> str:
     pitch = 38
     bar_h = 48
     total_w = (segments - 1) * pitch + bar_w
-    x0 = _FRAME_CX - total_w // 2          # centre the bar within the 4:3 frame
+    x0 = _FRAME_CX - total_w // 2          # centre the bar on the full screen
     row_top = _IY1 - bar_h                  # sit just above the bottom safe edge
     dot_r = 6
     green = _hex_to_ass(ui.color)
