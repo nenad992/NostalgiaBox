@@ -74,6 +74,10 @@ volume_step: 5
 
 power_off_on_min_volume: false
 
+# Stop playing files after HDMI has been down this many seconds (TV off).
+# 0 = never. The broadcast clock still advances; wake retunes to "what's on now".
+hdmi_idle_pause_seconds: 600
+
 scan_recursive: true
 # shuffle_seed: 1234
 

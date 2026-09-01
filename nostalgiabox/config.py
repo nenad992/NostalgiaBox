@@ -147,6 +147,9 @@ class Config:
     # mpv window: True on a Pi/TV; set false for a windowed laptop / Tilt loop.
     fullscreen: bool = True
 
+    # Seconds of HDMI-down before stop(); 0 = never. Broadcast clock still runs.
+    hdmi_idle_pause_seconds: float = 600.0
+
     mixed: Optional[MixedPoolConfig] = None
     empty_channel_message: str = "Ovaj kanal nema danas crtaća"
 
@@ -398,6 +401,9 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
         assets_dir=assets_dir,
         input_options=dict(data.get("input") or {}),
         fullscreen=bool(data.get("fullscreen", True)),
+        hdmi_idle_pause_seconds=_clamp_float(
+            data.get("hdmi_idle_pause_seconds", 600.0), 0.0, 86400.0, "hdmi_idle_pause_seconds"
+        ),
         mixed=mixed,
         empty_channel_message=str(
             data.get("empty_channel_message", "Ovaj kanal nema danas crtaća")

@@ -24,6 +24,7 @@ from typing import Callable, Optional
 from .actions import Action, InputEvent
 from .channel import Channel, ChannelLineup, PlayRequest, build_lineup
 from .config import Config
+from .hdmi import hdmi_signal_present
 from .input.manager import InputManager, create_backends
 from .overlay import OverlayManager
 from .player import END_EOF, END_ERROR, MockPlayer, Player
@@ -63,6 +64,9 @@ class TVApp:
         self.muted = False
         self.standby = False
         self.powered_off = False
+        self.hdmi_idle = False
+        self._hdmi_lost_at: Optional[float] = None
+        self._hdmi_signal = hdmi_signal_present
         self._playing_path: Optional[Path] = None
         self._last_channel_number: Optional[int] = None
         self._running = False
@@ -171,6 +175,7 @@ class TVApp:
         """
         now = self._clock()
         self.overlay.tick()
+        self._tick_hdmi_idle(now)
         self._maybe_commit_switch(now)
         self._maybe_commit_digits(now)
         self._drain_playback_events()
@@ -273,6 +278,8 @@ class TVApp:
 
     def tune_current(self, *, show_static: bool = True) -> None:
         """Tune into the currently selected channel."""
+        if self.hdmi_idle:
+            return
         channel = self.lineup.current
         self.overlay.clear_standby()
         self.overlay.clear_message()
@@ -391,6 +398,46 @@ class TVApp:
             self.overlay.clear_standby()
             self.tune_current(show_static=False)
 
+    def _tick_hdmi_idle(self, now: float) -> None:
+        """Stop decoding after HDMI has been down; retune when it returns."""
+        seconds = self.config.hdmi_idle_pause_seconds
+        if seconds <= 0:
+            if self.hdmi_idle:
+                self._wake_from_hdmi_idle()
+            self._hdmi_lost_at = None
+            return
+        present = self._hdmi_signal()
+        connected = True if present is None else bool(present)
+        if connected:
+            self._hdmi_lost_at = None
+            if self.hdmi_idle:
+                self._wake_from_hdmi_idle()
+            return
+        if self.standby or self.hdmi_idle:
+            return
+        if self._hdmi_lost_at is None:
+            self._hdmi_lost_at = now
+            return
+        if now - self._hdmi_lost_at >= seconds:
+            self._enter_hdmi_idle()
+
+    def _enter_hdmi_idle(self) -> None:
+        self.hdmi_idle = True
+        self._switch_deadline = None
+        self._pending_banner = None
+        self._playing_path = None
+        self.player.stop()
+        self.overlay.clear_all()
+        log.info("HDMI idle: playback stopped (broadcast clock still running)")
+
+    def _wake_from_hdmi_idle(self) -> None:
+        self.hdmi_idle = False
+        self._hdmi_lost_at = None
+        if self.standby:
+            return
+        log.info("HDMI back: tuning to current channel")
+        self.tune_current(show_static=False)
+
     # -- direct channel entry ----------------------------------------------
     def _push_digit(self, digit: int) -> None:
         self._digit_buffer = (self._digit_buffer + str(digit))[-3:]
@@ -418,7 +465,7 @@ class TVApp:
             except queue.Empty:
                 break
             # Coalesce: only advance once even if several events queued up.
-            if reason in (END_EOF, END_ERROR) and not advanced and not self.standby:
+            if reason in (END_EOF, END_ERROR) and not advanced and not self.standby and not self.hdmi_idle:
                 self._advance_current()
                 advanced = True
 

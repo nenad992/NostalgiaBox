@@ -273,6 +273,10 @@ the card. (To update later, disable the overlay, update, then re-enable it.)
 | Adjust volume / mute | The TV's own volume buttons |
 | Standby (blank screen) | Power |
 
+If the TV is off (HDMI link down) for 10 minutes, playback **stops** so the Pi
+is not decoding cartoons into a black screen. Turn the TV back on to that HDMI
+and it joins the last channel **where that station would be now**.
+
 Turn it on by plugging in power; it boots back to a channel automatically.
 
 ---

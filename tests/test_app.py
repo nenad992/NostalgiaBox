@@ -176,6 +176,81 @@ def test_standby_blanks_and_ignores_input(tmp_path):
     assert player.current is not None
 
 
+class _Hdmi:
+    def __init__(self, connected=True):
+        self.connected = connected
+
+    def __call__(self):
+        return self.connected
+
+
+def test_hdmi_lost_does_not_stop_before_timeout(tmp_path):
+    hdmi = _Hdmi(True)
+    app, player, clock = build_app(tmp_path, hdmi_idle_pause_seconds=600)
+    app._hdmi_signal = hdmi
+    app.start()
+    hdmi.connected = False
+    app.step()
+    clock.advance(599)
+    app.step()
+    assert player.current is not None
+    assert app.hdmi_idle is False
+
+
+def test_hdmi_lost_stops_after_timeout_and_wakes_on_signal(tmp_path):
+    hdmi = _Hdmi(True)
+    app, player, clock = build_app(
+        tmp_path, hdmi_idle_pause_seconds=600, tune_in="broadcast"
+    )
+    app._hdmi_signal = hdmi
+    app.start()
+    first_channel = app.lineup.current.number
+    hdmi.connected = False
+    app.step()
+    clock.advance(600)
+    app.step()
+    assert player.current is None
+    assert app.hdmi_idle is True
+    assert app.lineup.current.number == first_channel
+    player.finish_current(END_EOF)
+    app._drain_playback_events()
+    assert player.current is None  # idle: do not roll episodes
+    hdmi.connected = True
+    app.step()
+    assert app.hdmi_idle is False
+    assert player.current is not None
+    assert app.lineup.current.number == first_channel
+
+
+def test_hdmi_idle_channel_change_does_not_play_until_wake(tmp_path):
+    hdmi = _Hdmi(False)
+    app, player, clock = build_app(tmp_path, hdmi_idle_pause_seconds=10)
+    app._hdmi_signal = hdmi
+    app.start()
+    app.step()
+    clock.advance(10)
+    app.step()
+    assert app.hdmi_idle
+    send(app, Action.CHANNEL_UP)
+    assert app.lineup.current.number == 3
+    assert player.current is None
+    hdmi.connected = True
+    app.step()
+    assert player.current is not None
+    assert app.lineup.current.number == 3
+
+
+def test_hdmi_idle_disabled(tmp_path):
+    hdmi = _Hdmi(False)
+    app, player, clock = build_app(tmp_path, hdmi_idle_pause_seconds=0)
+    app._hdmi_signal = hdmi
+    app.start()
+    clock.advance(10_000)
+    app.step()
+    assert player.current is not None
+    assert app.hdmi_idle is False
+
+
 def test_quit_stops_running(tmp_path):
     app, player, _ = build_app(tmp_path)
     app.start()

@@ -17,6 +17,9 @@ bridge_seconds: 0.8
 fullscreen: false
 power_off_on_min_volume: false
 
+# Laptop has no HDMI hotplug; never idle-pause.
+hdmi_idle_pause_seconds: 0
+
 input:
   keyboard: false
   cec: false
