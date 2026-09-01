@@ -206,6 +206,7 @@ def _volume_ass(level: int, muted: bool, ui: UiConfig) -> str:
     row_top = _IY1 - bar_h                  # sit just above the bottom safe edge
     dot_r = 6
     green = _hex_to_ass(ui.color)
+    dim = _hex_to_ass(ui.dim_color)
 
     label = "Mute" if muted else "Volume"
     parts = [
@@ -219,7 +220,7 @@ def _volume_ass(level: int, muted: bool, ui: UiConfig) -> str:
                 _filled_rect(x=x0 + i * pitch, y=row_top, w=bar_w, h=bar_h, fill=green)
             )
         else:
-            parts.append(_dot(cx=cx, cy=row_top + bar_h / 2, r=dot_r, fill=green))
+            parts.append(_dot(cx=cx, cy=row_top + bar_h / 2, r=dot_r, fill=dim))
     return "\n".join(parts)
 
 
@@ -258,7 +259,13 @@ def _dot(*, cx: float, cy: float, r: float, fill: str) -> str:
 
 def _escape(text: str) -> str:
     """Escape characters that are meaningful inside an ASS override block."""
-    return text.replace("\\", "\\\\").replace("{", "(").replace("}", ")")
+    return (
+        text.replace("\\", "\\\\")
+        .replace("{", "(")
+        .replace("}", ")")
+        .replace("\r", " ")
+        .replace("\n", " ")
+    )
 
 
 __all__ = ["OverlayManager", "CANVAS_W", "CANVAS_H"]

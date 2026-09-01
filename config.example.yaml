@@ -8,8 +8,10 @@
 
 # -----------------------------------------------------------------------------
 # Mixed pool (recommended): one folder, 10 always-on channels.
-# Each file is on only one mixed channel. Shows keep their channel number
-# (sticky). Empty slots show empty_channel_message.
+# Every mixed channel airs the full pool (so none sit empty while videos
+# exist). Home shows only pick where that channel's wheel starts (Stitch on
+# CH1). Shows keep their channel number (sticky).
+# If the pool is empty: empty_channel_message.
 # -----------------------------------------------------------------------------
 mixed:
   path: /media/nostalgiabox/pool
@@ -21,9 +23,11 @@ mixed:
 # New shows take a free channel. If every channel already has a show, extra
 # shows are packed onto the lightest channel so every file still airs.
 # At most 3 episodes of one show in a row, then another show, then resume.
-# state_path: ~/.local/share/nostalgiabox/show-channels.json
-# show_block_episodes: 3
-# library_rescan_hour: 4   # -1 to disable. Skipped that night if HDMI is playing.
+# Unplugging the USB (mixed.path) rescans; 04:00 rescan adds new files unless
+# HDMI is live and playing (that night is skipped).
+state_path: ~/.local/share/nostalgiabox/show-channels.json
+show_block_episodes: 3
+library_rescan_hour: 4   # -1 to disable. Skipped that night if HDMI is playing.
 
 empty_channel_message: "Ovaj kanal nema danas crtaća"
 

@@ -51,14 +51,21 @@ def _cmd_check(config: Config) -> int:
     if overrides:
         print(f"key overrides: {len(overrides)} configured")
     print(f"channels ({len(lineup)}):")
-    total = 0
+    unique: set = set()
+    slots = 0
     for channel in lineup:
         count = len(channel.episodes)
-        total += count
+        slots += count
+        for path in channel.episodes:
+            try:
+                unique.add(path.resolve())
+            except OSError:
+                unique.add(path)
         flag = "" if count else "   <-- NO EPISODES FOUND"
         print(f"  CH {channel.number:>3}  {channel.name:<28} {count:>4} episodes{flag}")
-    print(f"total episodes: {total}")
-    return 0 if total > 0 else 1
+    print(f"unique files: {len(unique)}")
+    print(f"total episode slots: {slots}")
+    return 0 if unique else 1
 
 
 def _list_audio_devices() -> int:

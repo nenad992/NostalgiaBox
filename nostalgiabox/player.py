@@ -22,7 +22,17 @@ from typing import Callable, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
-# Reason strings passed to the "playback finished" callback.
+def should_emit_eof(*, suppress: bool, ignore_next_eof: bool) -> tuple[bool, bool]:
+    """Whether a natural EOF should roll the channel, and the next ignore flag.
+
+    Channel-change static is a playlist item ahead of the episode; its EOF must
+    not advance the channel. The following EOF (the episode) should.
+    """
+    if suppress:
+        return False, ignore_next_eof
+    if ignore_next_eof:
+        return False, False
+    return True, False
 END_EOF = "eof"        # the file played to its natural end -> roll next episode
 END_ERROR = "error"    # the file failed to play -> skip to next episode
 END_STOPPED = "stopped"  # we stopped it on purpose (channel change) -> ignore
@@ -198,17 +208,20 @@ class MpvPlayer(Player):
 
             ensure_nsapplication()
         self._closed = False
-        # True while a looping filler clip (static / colour bars) is showing, so
-        # its (non-)ending never advances the channel.
         self._suppress = True
+        self._ignore_next_eof = False
 
         @self._mpv.property_observer("eof-reached")
         def _on_eof(_name, value):  # pragma: no cover - needs libmpv + media
-            if value and not self._suppress and self.on_end is not None:
-                try:
-                    self.on_end(END_EOF)
-                except Exception:  # noqa: BLE001 - never let a callback kill mpv
-                    log.exception("error in on_end (eof) callback")
+            if value:
+                emit, self._ignore_next_eof = should_emit_eof(
+                    suppress=self._suppress, ignore_next_eof=self._ignore_next_eof
+                )
+                if emit and self.on_end is not None:
+                    try:
+                        self.on_end(END_EOF)
+                    except Exception:  # noqa: BLE001 - never let a callback kill mpv
+                        log.exception("error in on_end (eof) callback")
 
         @self._mpv.event_callback("end-file")
         def _on_end_file(event):  # pragma: no cover - needs libmpv + media
@@ -228,6 +241,7 @@ class MpvPlayer(Player):
     def play(self, path: Path, *, start: float = 0.0) -> None:
         # Enable end detection only for real content.
         self._suppress = False
+        self._ignore_next_eof = False
         try:
             self._mpv.loop_file = "no"
             if start and start > 0:
@@ -258,12 +272,10 @@ class MpvPlayer(Player):
         start: float = 0.0,
         static_seconds: float = 0.5,
     ) -> None:
-        # Build a 2-entry playlist: [static (cut to static_seconds), episode].
-        # mpv plays the static burst and, thanks to prefetch-playlist, has the
-        # episode ready to show the instant the static ends. keep-open=yes only
-        # holds the LAST entry, so eof-reached (which advances the channel) only
-        # ever trips for the episode - never the static.
+        # Playlist: [static burst, episode]. Ignore the static clip's EOF so we
+        # do not skip the episode we just tuned.
         self._suppress = False
+        self._ignore_next_eof = True
         try:
             self._mpv.loop_file = "no"
             self._mpv.loadfile(
@@ -541,6 +553,7 @@ __all__ = [
     "Player",
     "MpvPlayer",
     "MockPlayer",
+    "should_emit_eof",
     "END_EOF",
     "END_ERROR",
     "END_STOPPED",

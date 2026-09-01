@@ -182,11 +182,11 @@ keys to the Pi instead of ignoring them.
    | Up / Channel+ | Channel up |
    | Down / Channel− | Channel down |
    | Numbers | Jump to channel |
-   | Back / Exit | Last channel |
+   | Back / Previous channel | Last channel |
    | Power | Standby |
 
 **Volume and mute** stay on the TV. NostalgiaBox does not steal Vol+/Vol−,
-mute, or left/right, so the set keeps its own speakers.
+mute, left/right, or Exit, so the set keeps those keys.
 
 CEC is not identical on every set. If keys do nothing, confirm CEC is on, the
 Pi is the selected HDMI source, and check `journalctl -u nostalgiabox -f`

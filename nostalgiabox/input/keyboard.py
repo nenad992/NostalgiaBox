@@ -19,6 +19,18 @@ from .keymap import evdev_key_to_event
 
 log = logging.getLogger(__name__)
 
+
+def skip_evdev_device(name: Optional[str]) -> bool:
+    """True for HDMI-CEC HID devices so we do not double-fire with CecBackend."""
+    n = (name or "").lower()
+    if not n:
+        return False
+    if "cec" in n:
+        return True
+    if "hdmi" in n and ("cec" in n or "consumer" in n):
+        return True
+    return False
+
 # Key-event values reported by evdev: 0=up, 1=down, 2=autorepeat.
 _KEY_DOWN = 1
 _KEY_REPEAT = 2
@@ -75,6 +87,10 @@ class KeyboardBackend(InputBackend):
                 continue
             caps = dev.capabilities()
             if ecodes.EV_KEY not in caps:
+                dev.close()
+                continue
+            if skip_evdev_device(dev.name):
+                log.info("skipping CEC/HDMI HID device: %s (%s)", dev.name, path)
                 dev.close()
                 continue
             if self._name_filter and self._name_filter not in (dev.name or "").lower():
@@ -172,4 +188,4 @@ def _code_to_name(key_table, code: int) -> Optional[str]:
     return name
 
 
-__all__ = ["KeyboardBackend"]
+__all__ = ["KeyboardBackend", "skip_evdev_device"]

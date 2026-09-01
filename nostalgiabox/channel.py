@@ -79,20 +79,33 @@ def scan_episodes(
     relative path or filename matches one is dropped. ``exclude_seasons`` drops
     episodes whose detected season number is in the set.
     """
-    if not root.exists():
-        log.warning("channel folder does not exist: %s", root)
+    try:
+        if not root.exists():
+            log.warning("channel folder does not exist: %s", root)
+            return []
+        walker = root.rglob("*") if recursive else root.glob("*")
+    except OSError:
+        log.warning("could not scan channel folder: %s", root, exc_info=True)
         return []
     exts = {e.lower() for e in extensions}
     patterns = [p.lower() for p in exclude]
-    walker = root.rglob("*") if recursive else root.glob("*")
-    episodes = [
-        p
-        for p in walker
-        if p.is_file()
-        and p.suffix.lower() in exts
-        and not p.name.startswith(".")
-        and not _is_excluded(p, root, patterns, exclude_seasons)
-    ]
+    episodes: List[Path] = []
+    try:
+        for p in walker:
+            try:
+                if not (
+                    p.is_file()
+                    and p.suffix.lower() in exts
+                    and not p.name.startswith(".")
+                    and not _is_excluded(p, root, patterns, exclude_seasons)
+                ):
+                    continue
+            except OSError:
+                continue
+            episodes.append(p)
+    except OSError:
+        log.warning("scan interrupted for %s", root, exc_info=True)
+        return []
     episodes.sort(key=lambda p: str(p).lower())
     return episodes
 
@@ -311,9 +324,14 @@ def deal_episodes(
     for path in episodes:
         groups.setdefault(show_key(path, root), []).append(path)
     owned: Dict[str, int] = {} if mapping is None else mapping
-    for key, number in list(owned.items()):
-        if number not in valid:
-            del owned[key]
+    if groups:
+        for key in list(owned):
+            if key not in groups or owned.get(key) not in valid:
+                del owned[key]
+    else:
+        for key, number in list(owned.items()):
+            if number not in valid:
+                del owned[key]
     used = {n for n in owned.values() if n in valid}
     empty = [n for n in numbers if n not in used]
     new_keys = sorted(k for k in groups if k not in owned)
@@ -389,6 +407,19 @@ def mixed_deal_seed(shuffle_seed: Optional[int], day_iso: str) -> int:
     return int.from_bytes(hashlib.sha256(material).digest()[:8], "big") % (2**31)
 
 
+def channel_rng_seed(shuffle_seed: int, number: int, index: int) -> int:
+    """Stable 31-bit seed (not Python's per-process ``hash()``)."""
+    material = f"{shuffle_seed}|{number}|{index}|ch-rng".encode()
+    return int.from_bytes(hashlib.sha256(material).digest()[:8], "big") % (2**31)
+
+
+def _safe_resolve(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except OSError:
+        return path
+
+
 def start_of_local_day(when: Optional[float] = None) -> float:
     """Unix timestamp of local midnight (broadcast clock epoch)."""
     ts = time.time() if when is None else when
@@ -426,9 +457,14 @@ class Channel:
         self._rng = rng or random.Random()
         self._block_size = max(1, int(show_block_episodes))
         self._broadcast_epoch = broadcast_epoch
-        self._bag: Optional[ShuffleBag[Path]] = (
-            ShuffleBag(self.episodes, self._rng) if self.episodes else None
-        )
+        self._ordered = False
+        self._bag: Optional[ShuffleBag[Path]] = None
+        if self.episodes:
+            if not self.config.shuffle:
+                self._ordered = True
+            else:
+                self._bag = ShuffleBag(self.episodes, self._rng)
+        self._order_index = 0
         # Resume state (used by the "resume" tune-in mode).
         self._resume_path: Optional[Path] = None
         self._resume_position: float = 0.0
@@ -452,12 +488,21 @@ class Channel:
         return f"<Channel {self.number} {self.name!r} ({len(self.episodes)} eps)>"
 
     # -- playback selection -------------------------------------------------
-    def _next_shuffled(self) -> PlayRequest:
-        assert self._bag is not None
+    def _tune_in_offset(self) -> float:
         if self.start_offset_max > self.start_offset_min:
-            start = self._rng.uniform(self.start_offset_min, self.start_offset_max)
-        else:
-            start = self.start_offset_min
+            return self._rng.uniform(self.start_offset_min, self.start_offset_max)
+        return self.start_offset_min
+
+    def _next_in_file_order(self) -> Path:
+        path = self.episodes[self._order_index % len(self.episodes)]
+        self._order_index += 1
+        return path
+
+    def _next_shuffled(self) -> PlayRequest:
+        start = self._tune_in_offset()
+        if self._ordered:
+            return PlayRequest(path=self._next_in_file_order(), start=start)
+        assert self._bag is not None
         return PlayRequest(path=self._bag.next(), start=start)
 
     def tune_in(self, *, now: Optional[float] = None) -> Optional[PlayRequest]:
@@ -537,13 +582,7 @@ class Channel:
         if self.is_empty:
             return None
         nxt = self.next_path(current)
-        if self.tune_in_mode == "broadcast":
-            return PlayRequest(path=nxt, start=0.0)
-        if self.start_offset_max > self.start_offset_min:
-            start = self._rng.uniform(self.start_offset_min, self.start_offset_max)
-        else:
-            start = self.start_offset_min
-        return PlayRequest(path=nxt, start=start)
+        return PlayRequest(path=nxt, start=0.0)
 
     # -- broadcast schedule -------------------------------------------------
     def _ensure_broadcast(self, *, epoch: float) -> Optional[BroadcastSchedule]:
@@ -663,7 +702,11 @@ def build_lineup(
             exclude=ch_cfg.exclude,
             exclude_seasons=ch_cfg.exclude_seasons,
         )
-        dedicated_files.update(p.resolve() for p in episodes)
+        for p in episodes:
+            try:
+                dedicated_files.add(p.resolve())
+            except OSError:
+                dedicated_files.add(p)
         if not episodes:
             log.warning(
                 "channel %s (%s) has no playable episodes in %s",
@@ -691,7 +734,7 @@ def build_lineup(
                 config.video_extensions,
                 recursive=config.scan_recursive,
             )
-            if p.resolve() not in dedicated_files
+            if _safe_resolve(p) not in dedicated_files
         ]
         mapping = load_show_map(config.state_path)
         numbers = [c.number for c in pool_cfgs]
@@ -743,9 +786,7 @@ def _make_channel(
     broadcast_epoch: Optional[float],
 ) -> Channel:
     if config.shuffle_seed is not None:
-        ch_rng = random.Random(
-            hash((config.shuffle_seed, ch_cfg.number, index)) & 0xFFFFFFFF
-        )
+        ch_rng = random.Random(channel_rng_seed(config.shuffle_seed, ch_cfg.number, index))
     else:
         ch_rng = random.Random()
     return Channel(
@@ -770,6 +811,7 @@ __all__ = [
     "deal_episodes",
     "show_key",
     "series_prefix",
+    "channel_rng_seed",
     "mixed_playlists",
     "rotate_playlist_to_shows",
     "load_show_map",

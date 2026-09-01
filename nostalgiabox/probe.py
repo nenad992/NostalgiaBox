@@ -49,7 +49,7 @@ def probe_duration(path: Path, *, timeout: float = 15.0) -> Optional[float]:
             return None
         value = float(duration)
         return value if value > 0 else None
-    except (subprocess.SubprocessError, ValueError, OSError):
+    except (subprocess.SubprocessError, ValueError, OSError, json.JSONDecodeError):
         return None
 
 

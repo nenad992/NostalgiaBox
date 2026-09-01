@@ -5,7 +5,8 @@ Two worlds feed in here:
 * Linux input-event key *names* (``KEY_VOLUMEUP`` etc.) - used by both the
   evdev backend (real USB/IR remotes and keyboards) and the stdin dev backend
   after it translates characters to these names.
-* HDMI-CEC user-control *names* (``volume up`` etc.) - used by the CEC backend.
+* HDMI-CEC user-control *names* (``channel up`` etc.) - used by the CEC backend.
+  Volume and mute stay on the TV; they are not mapped.
 
 Cheap USB/IR "media remotes" report a grab-bag of different key codes, so the
 map is deliberately generous: several physical keys can map to the same action.
@@ -194,7 +195,6 @@ _CEC_ACTIONS: Dict[str, InputEvent] = {
     "electronic program guide": InputEvent(Action.INFO),
     "display information": InputEvent(Action.INFO),
     "previous channel": InputEvent(Action.LAST_CHANNEL),
-    "exit": InputEvent(Action.LAST_CHANNEL),
     "power": InputEvent(Action.POWER),
     "power toggle function": InputEvent(Action.POWER),
     "power off function": InputEvent(Action.POWER),

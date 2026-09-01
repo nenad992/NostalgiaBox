@@ -13,6 +13,6 @@
 ## Schedule
 
 - Group files by subfolder under the pool, else by series name in the filename (`Pokemon S01E02` → Pokemon).
-- Shuffle **shows** (daily seed), round-robin onto mixed channels. A show stays on one channel that day.
-- Within a show, episodes stay in natural filename order.
+- Shuffle **shows** (daily seed) onto sticky homes, then every mixed channel airs the full pool (rotated to start at the home show). A show stays on one home channel.
+- Within a show, episodes stay in natural filename order. At most `show_block_episodes` (default 3) in a row, then another show.
 - Broadcast airs that list in order and loops. No per-file shuffle inside a show.

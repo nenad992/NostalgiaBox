@@ -514,20 +514,38 @@ class TVApp:
             self._play_request(request)
 
     def _library_present(self) -> bool:
-        mixed = self.config.mixed
-        if mixed is None:
+        if self.config.mixed is not None:
+            roots = [self.config.mixed.path]
+        else:
+            roots = [c.path for c in self.config.channels]
+        if not roots:
             return True
         try:
-            return mixed.path.is_dir()
+            return any(p.is_dir() for p in roots)
         except OSError:
             return False
+
+    def _resume_snapshot(self) -> dict[int, tuple[Path, float]]:
+        out: dict[int, tuple[Path, float]] = {}
+        for channel in self.lineup:
+            if channel._resume_path is not None:
+                out[channel.number] = (channel._resume_path, channel._resume_position)
+        return out
+
+    def _restore_resume(self, snapshot: dict[int, tuple[Path, float]]) -> None:
+        for channel in self.lineup:
+            saved = snapshot.get(channel.number)
+            if saved is not None:
+                channel.remember(*saved)
 
     def _refresh_library(self, *, keep_playback: bool = False) -> None:
         current_number = self.lineup.current.number
         playing = self._playing_path
+        resume = self._resume_snapshot()
         self.lineup = build_lineup(self.config)
         if self.lineup.has_number(current_number):
             self.lineup.select_number(current_number)
+        self._restore_resume(resume)
         log.info("library rescanned; %d channels", len(self.lineup))
         if keep_playback and playing is not None:
             try:
@@ -538,6 +556,8 @@ class TVApp:
                 still = playing in self.lineup.current.episodes
             if still:
                 return
+            if not self.standby and not self.hdmi_idle:
+                self.tune_current(show_static=False)
 
     def _tick_nightly_rescan(self) -> None:
         hour = self.config.library_rescan_hour

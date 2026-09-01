@@ -78,8 +78,8 @@ class ChannelConfig:
     # a set of season numbers detected from the path (e.g. S06E01, "Season 6").
     exclude: tuple[str, ...] = ()
     exclude_seasons: frozenset[int] = frozenset()
-    # True for mixed-pool slots: build_lineup assigns unique files from mixed.path
-    # instead of scanning this path as its own library.
+    # True for mixed-pool slots: the pool is aired on every mixed channel
+    # (rotated by sticky home show). This path is the pool root, not a unique deal.
     from_pool: bool = False
 
     def __post_init__(self) -> None:
@@ -91,7 +91,7 @@ class ChannelConfig:
 
 @dataclass(frozen=True)
 class MixedPoolConfig:
-    """One folder of videos dealt uniquely across ``count`` mixed channels."""
+    """One folder of videos mixed across ``count`` channels (full pool each)."""
 
     path: Path
     count: int = 10
@@ -360,9 +360,6 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
         raise ConfigError(
             "configuration must define 'mixed', 'channels', or 'media_root'"
         )
-
-    if not channels:
-        raise ConfigError("no channels found - check 'channels' or the folders under 'media_root'")
 
     _ensure_unique_numbers(channels)
 
