@@ -276,9 +276,11 @@ def test_lineup_sticky_across_rebuild(tmp_path):
     (pool / "Pokemon" / "s01e01.mp4").write_bytes(b"x")
     b = build_lineup(config_from_dict(data))
     stitch_b = next(c for c in b if c.number == stitch_a.number)
-    assert [p.parent.name for p in stitch_b.episodes] == ["Stitch"]
-    poke = next(c for c in b if c.episodes and c.number != stitch_a.number)
-    assert poke.name.lower() == "pokemon"
+    assert stitch_b.name.lower() == "stitch"
+    assert any(p.parent.name == "Stitch" for p in stitch_b.episodes)
+    poke = next(c for c in b if c.name.lower() == "pokemon")
+    assert poke.number != stitch_a.number
+    assert all(not c.is_empty for c in b if c.number <= 10)
 
 
 def test_pack_extra_shows_when_all_channels_full(tmp_path):
@@ -335,6 +337,44 @@ def test_air_order_max_three_then_other_show(tmp_path):
     assert "s01e04.mp4" in {p.name for p in order[6:] if p.parent.name == "Pokemon"}
 
 
+def test_mixed_playlists_keep_every_channel_busy(tmp_path):
+    from nostalgiabox.channel import deal_episodes, mixed_playlists
+
+    stitch = tmp_path / "Stitch"
+    poke = tmp_path / "Pokemon"
+    stitch.mkdir()
+    poke.mkdir()
+    for i in range(1, 6):
+        (stitch / f"s01e{i:02d}.mp4").write_bytes(b"x")
+    for i in range(1, 4):
+        (poke / f"s01e{i:02d}.mp4").write_bytes(b"x")
+    pool = list(stitch.iterdir()) + list(poke.iterdir())
+    homes = deal_episodes(pool, 10, random.Random(0), root=tmp_path)
+    lists = mixed_playlists(pool, homes, root=tmp_path, block_size=3)
+    assert all(len(pl) == 8 for pl in lists)
+    assert all(pl for pl in lists)
+    stitch_i = next(i for i, h in enumerate(homes) if h and h[0].parent.name == "Stitch")
+    poke_i = next(i for i, h in enumerate(homes) if h and h[0].parent.name == "Pokemon")
+    assert lists[stitch_i][0].parent.name == "Stitch"
+    assert lists[poke_i][0].parent.name == "Pokemon"
+
+
+def test_channel_wraps_to_first_episode_not_empty(tmp_path):
+    from nostalgiabox.config import ChannelConfig
+
+    folder = tmp_path / "Poke"
+    folder.mkdir()
+    for name in ("a.mp4", "b.mp4", "c.mp4"):
+        (folder / name).write_bytes(b"x")
+    eps = scan_episodes(folder, [".mp4"])
+    ch = Channel(ChannelConfig(number=2, name="P", path=folder), eps, tune_in="broadcast")
+    last = eps[-1]
+    assert ch.ends_cycle(last)
+    nxt = ch.play_after(last)
+    assert nxt is not None
+    assert nxt.path == eps[0]
+
+
 def test_mixed_pool_lineup(tmp_path):
     pool = tmp_path / "pool"
     pool.mkdir()
@@ -357,9 +397,10 @@ def test_mixed_pool_lineup(tmp_path):
     assert len(mixed) == 10
     assert len(dedicated[0].episodes) == 2
     mixed_files = [p.name for c in mixed for p in c.episodes]
-    assert len(mixed_files) == 4
     assert len(set(mixed_files)) == 4
-    assert sum(1 for c in mixed if c.is_empty) == 6
+    # Every mixed channel airs the full pool so none sit empty.
+    assert all(not c.is_empty for c in mixed)
+    assert all(len(c.episodes) == 4 for c in mixed)
 
 
 def test_same_day_deal_is_stable(tmp_path):

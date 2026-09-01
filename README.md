@@ -282,10 +282,12 @@ and it joins the last channel **where that station would be now**.
 
 Cartoons live on the USB (or SD) folder in `mixed.path`. Unplug it and the box
 rescans (empty channels until it is back). Plug it in again and the same shows
-stay on the same channel numbers. If every channel already has a show, extra
-series are packed onto a channel so **every file still airs**. A channel with
-more than one show plays **at most three episodes** of one series, then
-something else, then comes back. New files are picked up when a channel
+stay on the same channel numbers. Every mixed channel airs the **whole library**
+(starting with that channel’s home show), so a short list does not go blank
+while another channel is still running. If every channel already has a home
+show, extra series are packed onto a channel so **every file still airs**. A
+channel with more than one show plays **at most three episodes** of one series,
+then something else, then comes back. New files are picked up when a channel
 finishes its last episode and loops, or as soon as the drive returns.
 
 Turn it on by plugging in power; it boots back to a channel automatically.

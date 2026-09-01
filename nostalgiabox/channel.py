@@ -317,6 +317,46 @@ def deal_episodes(
     return buckets
 
 
+def rotate_playlist_to_shows(
+    playlist: Sequence[Path],
+    home_keys: AbstractSet[str],
+    root: Optional[Path] = None,
+) -> List[Path]:
+    """Rotate so the playlist starts at a home show; same files, same runtime."""
+    items = list(playlist)
+    if not items or not home_keys:
+        return items
+    for i, path in enumerate(items):
+        if show_key(path, root) in home_keys:
+            return items[i:] + items[:i]
+    return items
+
+
+def mixed_playlists(
+    pool: Sequence[Path],
+    home_buckets: Sequence[Sequence[Path]],
+    *,
+    root: Optional[Path] = None,
+    block_size: int = 3,
+) -> List[List[Path]]:
+    """Every mixed channel airs the full pool so none sit empty or finish early.
+
+    Home shows (sticky map) only choose *where the wheel starts*.
+    """
+    n = len(home_buckets)
+    if not pool:
+        return [[] for _ in range(n)]
+    base = air_order(pool, random.Random(0), root=root, block_size=block_size)
+    show_names = sorted({show_key(p, root) for p in pool})
+    playlists: List[List[Path]] = []
+    for i, home in enumerate(home_buckets):
+        homes = {show_key(p, root) for p in home}
+        if not homes and show_names:
+            homes = {show_names[i % len(show_names)]}
+        playlists.append(rotate_playlist_to_shows(base, homes, root))
+    return playlists
+
+
 def mixed_deal_seed(shuffle_seed: Optional[int], day_iso: str) -> int:
     """Stable 31-bit seed so the same day + config yields the same deal."""
     material = f"{shuffle_seed!s}|{day_iso}|mixed-deal".encode()
@@ -611,13 +651,26 @@ def build_lineup(
             channel_numbers=numbers,
         )
         save_show_map(config.state_path, mapping)
+        playlists = mixed_playlists(
+            pool,
+            dealt,
+            root=pool_root,
+            block_size=config.show_block_episodes,
+        )
         shows_on: Dict[int, List[str]] = {}
         for key, number in mapping.items():
             shows_on.setdefault(number, []).append(key)
-        for i, (ch_cfg, episodes) in enumerate(zip(pool_cfgs, dealt)):
+        for i, (ch_cfg, home_eps, episodes) in enumerate(
+            zip(pool_cfgs, dealt, playlists)
+        ):
             names = sorted(shows_on.get(ch_cfg.number, []))
+            if not names:
+                names = sorted({show_key(p, pool_root) for p in home_eps})
             if len(names) == 1:
                 ch_cfg = replace(ch_cfg, name=_prettify_name(names[0]))
+            elif not names and episodes:
+                starter = show_key(episodes[0], pool_root)
+                ch_cfg = replace(ch_cfg, name=_prettify_name(starter))
             if not episodes:
                 log.info(
                     "channel %s (%s) has no cartoons in the current library",
@@ -672,7 +725,8 @@ __all__ = [
     "deal_episodes",
     "show_key",
     "series_prefix",
-    "air_order",
+    "mixed_playlists",
+    "rotate_playlist_to_shows",
     "load_show_map",
     "save_show_map",
     "start_of_local_day",
