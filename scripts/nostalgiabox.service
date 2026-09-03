@@ -25,6 +25,8 @@ Environment=XDG_RUNTIME_DIR=/run/user/__UID__
 ExecStart=__REPO_DIR__/.venv/bin/nostalgiabox --config __REPO_DIR__/config.yaml
 Restart=always
 RestartSec=3
+TimeoutStopSec=8
+KillMode=control-group
 # Own the console so video can be shown on it.
 StandardInput=tty
 TTYPath=/dev/tty1

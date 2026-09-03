@@ -1,6 +1,17 @@
 import pytest
 
-from nostalgiabox.player import mpv_player_options
+from nostalgiabox.player import mpv_player_options, use_drm_gpu_output
+
+
+def test_headless_linux_uses_gpu_drm():
+    assert use_drm_gpu_output(platform="linux", env={}) is True
+    assert use_drm_gpu_output(platform="linux", env={"DISPLAY": ":0"}) is False
+    assert use_drm_gpu_output(platform="darwin", env={}) is False
+    opts = mpv_player_options(fullscreen=True, extra_options={})
+    # extra_options empty; drm flags only when this process is a headless Linux
+    if use_drm_gpu_output():
+        assert opts["vo"] == "gpu"
+        assert opts["gpu_context"] == "drm"
 
 
 def test_force_window_yes_is_valid_for_libmpv():

@@ -15,10 +15,11 @@ the interesting logic in ``app.py`` never has to know which one it is using.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Mapping, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -116,6 +117,21 @@ class Player(ABC):
         """Service OS window events. No-op except where the VO needs it (macOS)."""
 
 
+def use_drm_gpu_output(
+    *,
+    platform: Optional[str] = None,
+    env: Optional[Mapping[str, str]] = None,
+) -> bool:
+    """True on a headless Linux console (Pi KMS), not under X11/Wayland."""
+    plat = sys.platform if platform is None else platform
+    environ = os.environ if env is None else env
+    if not plat.startswith("linux"):
+        return False
+    if environ.get("DISPLAY") or environ.get("WAYLAND_DISPLAY"):
+        return False
+    return True
+
+
 def mpv_player_options(
     *,
     fullscreen: bool = True,
@@ -147,6 +163,10 @@ def mpv_player_options(
         cursor_autohide="always",
         osd_font_size=40,
     )
+    # Default vo=drm on a Pi console cannot run GLSL user shaders (no CRT).
+    if use_drm_gpu_output():
+        options["vo"] = "gpu"
+        options["gpu_context"] = "drm"
     if not fullscreen:
         options["geometry"] = "1280x720"
         options["title"] = "NostalgiaBox"

@@ -197,10 +197,21 @@ def test_empty_pool_does_not_wipe_sticky_map(tmp_path):
 
 
 def test_skip_cec_like_evdev_names():
-    assert skip_evdev_device("vc4-hdmi0 HDMI CEC") is True
     assert skip_evdev_device("Pulse-Eight USB-CEC Adapter") is True
     assert skip_evdev_device("Flirc USB Receiver") is False
     assert skip_evdev_device("HID Keyboard") is False
+    assert skip_evdev_device("vc4-hdmi-0") is False
+    assert skip_evdev_device("vc4-hdmi0 HDMI CEC") is False
+    assert skip_evdev_device("vc4-hdmi-0 HDMI Jack") is False
+
+
+def test_vc4_hdmi_remote_name():
+    from nostalgiabox.input.keyboard import is_vc4_hdmi_remote_name
+
+    assert is_vc4_hdmi_remote_name("vc4-hdmi-0") is True
+    assert is_vc4_hdmi_remote_name("vc4-hdmi-1") is True
+    assert is_vc4_hdmi_remote_name("vc4-hdmi-0 HDMI Jack") is False
+    assert is_vc4_hdmi_remote_name("Flirc") is False
 
 
 def test_transition_static_eof_is_ignored_then_episode_eof_counts():

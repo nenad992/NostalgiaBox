@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import signal
 import subprocess
 import time
 from datetime import datetime
@@ -155,12 +156,17 @@ class TVApp:
         self.start()
         self._running = True
         log.info("NostalgiaBox is on the air. %d channels.", len(self.lineup))
+        def _stop(_signum=None, _frame=None) -> None:
+            self._running = False
+
+        prev_term = signal.signal(signal.SIGTERM, _stop)
         try:
             while self._running:
                 self.step(block=True)
         except KeyboardInterrupt:  # pragma: no cover - interactive convenience
             log.info("interrupted; shutting down")
         finally:
+            signal.signal(signal.SIGTERM, prev_term)
             self.shutdown()
 
     def shutdown(self) -> None:

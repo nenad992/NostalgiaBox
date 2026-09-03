@@ -66,6 +66,7 @@ _EVDEV_ACTIONS: Dict[str, InputEvent] = {
 for _d in range(10):
     _EVDEV_ACTIONS[f"KEY_{_d}"] = InputEvent.digit(_d)
     _EVDEV_ACTIONS[f"KEY_KP{_d}"] = InputEvent.digit(_d)
+    _EVDEV_ACTIONS[f"KEY_NUMERIC_{_d}"] = InputEvent.digit(_d)
 
 
 def evdev_key_to_event(key_name: str) -> Optional[InputEvent]:

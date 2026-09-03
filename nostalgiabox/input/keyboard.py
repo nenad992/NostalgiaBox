@@ -20,10 +20,48 @@ from .keymap import evdev_key_to_event
 log = logging.getLogger(__name__)
 
 
+def is_vc4_hdmi_remote_name(name: Optional[str]) -> bool:
+    """Pi kernel HDMI-CEC remote (``vc4-hdmi-0``), not the ALSA jack switch."""
+    n = (name or "").lower().strip()
+    if not n or "jack" in n:
+        return False
+    return n.startswith("vc4-hdmi")
+
+
+def kernel_hdmi_cec_remote_present() -> bool:
+    """True when the Pi already exposes HDMI-CEC as an evdev keyboard."""
+    if not KeyboardBackend.is_available():
+        return False
+    try:
+        import evdev
+    except ImportError:
+        return False
+    for path in evdev.list_devices():
+        try:
+            dev = evdev.InputDevice(path)
+        except (OSError, PermissionError):
+            continue
+        name = dev.name
+        try:
+            dev.close()
+        except OSError:
+            pass
+        if is_vc4_hdmi_remote_name(name):
+            return True
+    return False
+
+
 def skip_evdev_device(name: Optional[str]) -> bool:
-    """True for HDMI-CEC HID devices so we do not double-fire with CecBackend."""
+    """True for USB CEC adapters we must not also treat as keyboards.
+
+    Do **not** skip ``vc4-hdmi-0``: that is how Raspberry Pi OS delivers TV
+    remote keys. ``cec-client`` exclusive-locks ``/dev/cec0`` and then those
+    keys never arrive.
+    """
     n = (name or "").lower()
     if not n:
+        return False
+    if is_vc4_hdmi_remote_name(n):
         return False
     if "cec" in n:
         return True
@@ -188,4 +226,9 @@ def _code_to_name(key_table, code: int) -> Optional[str]:
     return name
 
 
-__all__ = ["KeyboardBackend", "skip_evdev_device"]
+__all__ = [
+    "KeyboardBackend",
+    "skip_evdev_device",
+    "is_vc4_hdmi_remote_name",
+    "kernel_hdmi_cec_remote_present",
+]

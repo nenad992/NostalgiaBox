@@ -5,7 +5,7 @@ from nostalgiabox.crt import render_shader, write_shader
 def test_shader_contains_baked_constants():
     crt = CrtConfig(curvature=0.15, corner_radius=0.05, vignette=0.3, scanlines=True)
     shader = render_shader(crt)
-    assert "//!HOOK MAIN" in shader
+    assert "//!HOOK OUTPUT" in shader
     assert "0.15000" in shader          # curvature baked in
     assert "#define SCANLINES 1" in shader
 
@@ -24,4 +24,4 @@ def test_write_shader_writes_file(tmp_path):
     result = write_shader(CrtConfig(enabled=True), out)
     assert result == out
     assert out.is_file()
-    assert "HOOK MAIN" in out.read_text()
+    assert "HOOK OUTPUT" in out.read_text()

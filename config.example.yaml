@@ -86,7 +86,7 @@ initial_volume: 70
 volume_step: 5
 # fullscreen: true
 
-# audio_device: "alsa/hdmi:CARD=vc4hdmi0,DEV=0"
+audio_device: "alsa/hdmi:CARD=vc4hdmi0,DEV=0"
 
 power_off_on_min_volume: false
 

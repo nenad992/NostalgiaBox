@@ -21,9 +21,9 @@ from .config import CrtConfig
 
 log = logging.getLogger(__name__)
 
-# mpv/libplacebo user-shader ("hook") template. Hooks the MAIN video plane and
-# remaps texture coordinates for the curvature, then masks/rounds/shades.
-_SHADER_TEMPLATE = """//!HOOK MAIN
+# Hook OUTPUT so rounded corners apply to the whole TV frame after panscan.
+# HOOK MAIN is cropped away when panscan fills a 16:9 set.
+_SHADER_TEMPLATE = """//!HOOK OUTPUT
 //!BIND HOOKED
 //!DESC nostalgiabox CRT (curvature + rounded corners + vignette + scanlines)
 
