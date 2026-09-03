@@ -23,6 +23,77 @@ from .keymap import cec_key_to_event
 
 log = logging.getLogger(__name__)
 
+
+def claim_kernel_cec(
+    *,
+    device: str = "/dev/cec0",
+    osd_name: str = "NostalgiaBox",
+) -> None:
+    """Name the Pi on the TV and claim active source without locking /dev/cec.
+
+    ``cec-client`` exclusive-opens the adapter (so kernel RC dies). ``cec-ctl``
+    can set playback + OSD name and send ACTIVE_SOURCE, then exit.
+    """
+    if shutil.which("cec-ctl") is None:
+        log.info("cec-ctl not found; HDMI device name stays at kernel default")
+        return
+    name = (osd_name or "NostalgiaBox")[:14]
+    try:
+        info = subprocess.run(
+            ["cec-ctl", "-d", device, "--playback", f"--osd-name={name}"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("cec-ctl playback setup failed: %s", exc)
+        return
+    if info.returncode != 0:
+        log.warning("cec-ctl playback failed: %s", (info.stderr or info.stdout)[:300])
+        return
+    phys = _phys_addr_from_cec_ctl(info.stdout)
+    if phys is None:
+        phys = _phys_addr_from_cec_ctl(
+            subprocess.run(
+                ["cec-ctl", "-d", device],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            ).stdout
+        )
+    try:
+        subprocess.run(
+            ["cec-ctl", "-d", device, "--to", "0", "--image-view-on"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        if phys:
+            subprocess.run(
+                [
+                    "cec-ctl",
+                    "-d",
+                    device,
+                    "--active-source",
+                    f"phys-addr={phys}",
+                ],
+                capture_output=True,
+                timeout=5,
+                check=False,
+            )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("cec-ctl active-source failed: %s", exc)
+        return
+    log.info("HDMI-CEC: OSD name %r, active source %s", name, phys or "?")
+
+
+def _phys_addr_from_cec_ctl(text: str) -> Optional[str]:
+    match = re.search(r"Physical Address\s*:\s*([0-9a-fA-F]+\.[0-9a-fA-F]+\.[0-9a-fA-F]+\.[0-9a-fA-F]+)", text)
+    return match.group(1) if match else None
+
+
 # cec-client English lines (ignore "key released:").
 _KEY_PRESSED_RE = re.compile(r"key pressed:\s*(.+?)\s*(?:\(|$)", re.IGNORECASE)
 # User Control Pressed opcode 0x44 + operand (not 0x45 released).
@@ -151,4 +222,4 @@ class CecBackend(InputBackend):
         self._proc = None
 
 
-__all__ = ["CecBackend", "parse_cec_line"]
+__all__ = ["CecBackend", "parse_cec_line", "claim_kernel_cec"]

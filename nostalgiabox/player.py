@@ -167,6 +167,12 @@ def mpv_player_options(
     if use_drm_gpu_output():
         options["vo"] = "gpu"
         options["gpu_context"] = "drm"
+        options["scale"] = "bilinear"
+        options["cscale"] = "bilinear"
+        options["dscale"] = "bilinear"
+        options["dither"] = "no"
+        options["deband"] = "no"
+        options["hwdec_codecs"] = "h264,hevc,mpeg2video,mpeg4,vp8,vp9,av1"
     if not fullscreen:
         options["geometry"] = "1280x720"
         options["title"] = "NostalgiaBox"

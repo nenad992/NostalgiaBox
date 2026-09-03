@@ -107,10 +107,13 @@ def create_backends(options: Optional[Dict] = None) -> List[InputBackend]:
         # libCEC exclusive-opens /dev/cecN (errno 16) and blocks the kernel RC
         # device, so TV remotes do nothing on a Pi 4. Prefer evdev there.
         if kernel_hdmi_cec_remote_present() and options.get("keyboard", True):
+            from .cec import claim_kernel_cec
+
             log.info(
                 "HDMI-CEC remote via kernel evdev (vc4-hdmi); "
                 "not starting cec-client"
             )
+            claim_kernel_cec(osd_name=options.get("cec_osd_name", "NostalgiaBox"))
         else:
             binary = options.get("cec_binary", "cec-client")
             if CecBackend.is_available(binary):

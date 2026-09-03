@@ -79,7 +79,7 @@ crt:
   curvature: 0.12
   corner_radius: 0.065
   vignette: 0.25
-  scanlines: true
+  scanlines: false
   scanline_intensity: 0.12
 
 initial_volume: 70

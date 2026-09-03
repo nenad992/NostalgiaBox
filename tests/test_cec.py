@@ -43,3 +43,11 @@ def test_parse_cec_user_control_pressed_hex():
     assert parse_cec_line(">> 01:45:01") is None  # released
     ev = parse_cec_line(">> 0f:44:20")
     assert ev is not None and ev.value == 0
+
+
+def test_phys_addr_from_cec_ctl():
+    from nostalgiabox.input.cec import _phys_addr_from_cec_ctl
+
+    text = "	Physical Address           : 3.0.0.0\n	OSD Name                   : 'NostalgiaBox'\n"
+    assert _phys_addr_from_cec_ctl(text) == "3.0.0.0"
+    assert _phys_addr_from_cec_ctl("nope") is None

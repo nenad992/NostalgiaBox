@@ -19,6 +19,7 @@ import queue
 import signal
 import subprocess
 import time
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -121,12 +122,19 @@ class TVApp:
                 player = MockPlayer(verbose=True)
             else:
                 from .crt import write_shader
-                from .player import MpvPlayer
+                from .player import MpvPlayer, use_drm_gpu_output
 
                 assets = assets_dir or config.assets_dir or DEFAULT_ASSETS_DIR
-                shader_path = write_shader(config.crt)
+                crt = config.crt
+                hwdec = "auto-safe"
+                # Pi 4: auto-safe tries CUDA; GLSL scanlines on 1080p stall the GPU.
+                if use_drm_gpu_output():
+                    crt = replace(crt, scanlines=False)
+                    hwdec = "v4l2m2m"
+                shader_path = write_shader(crt)
                 player = MpvPlayer(
                     fullscreen=config.fullscreen,
+                    hwdec=hwdec,
                     glsl_shaders=str(shader_path) if shader_path else None,
                     fonts_dir=assets / "fonts",
                     force_4_3=config.force_4_3,
