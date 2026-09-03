@@ -10,7 +10,7 @@
 [Unit]
 Description=NostalgiaBox retro TV
 After=multi-user.target sound.target
-Conflicts=getty@tty1.service
+Conflicts=getty@tty1.service lightdm.service gdm.service gdm3.service sddm.service
 
 [Service]
 Type=simple
@@ -29,6 +29,8 @@ TimeoutStopSec=8
 KillMode=control-group
 # Own the console so video can be shown on it.
 StandardInput=tty
+StandardOutput=journal
+StandardError=journal
 TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes

@@ -38,6 +38,13 @@ ${RUN_USER} ALL=(root) NOPASSWD: /sbin/poweroff, /usr/sbin/poweroff, /sbin/shutd
 EOF
 sudo chmod 440 /etc/sudoers.d/nostalgiabox-poweroff
 
+echo "==> Booting to console TV (no Raspberry Pi desktop on HDMI)"
+# graphical.target starts lightdm *after* this unit and steals DRM/HDMI.
+if systemctl list-unit-files lightdm.service >/dev/null 2>&1; then
+  sudo systemctl disable --now lightdm.service || true
+fi
+sudo systemctl set-default multi-user.target
+
 echo "==> Enabling and starting the service"
 sudo systemctl daemon-reload
 sudo systemctl enable nostalgiabox.service
@@ -52,4 +59,8 @@ Handy commands:
   journalctl -u nostalgiabox -f     # live logs
   sudo systemctl stop nostalgiabox  # stop the TV
   sudo systemctl disable nostalgiabox   # don't start on boot
+  To get the Pi desktop back later:
+    sudo systemctl set-default graphical.target
+    sudo systemctl enable --now lightdm
+    sudo systemctl stop nostalgiabox
 EOF
