@@ -7,11 +7,10 @@
 #     nostalgiabox --check
 
 # -----------------------------------------------------------------------------
-# Mixed pool (recommended): one folder, 10 always-on channels.
-# Every mixed channel airs the full pool (so none sit empty while videos
-# exist). Home shows only pick where that channel's wheel starts (Stitch on
-# CH1). Shows keep their channel number (sticky).
-# If the pool is empty: empty_channel_message.
+# Mixed pool: one USB folder, 10 channels. Each *show* (franchise) lives on
+# one home channel. Extra shows pack onto the lightest channel. A file airs
+# on exactly one channel, so two channels never play the same cartoon at once.
+# Empty slots: empty_channel_message.
 #
 # Pi (this box): Kingston USB auto-mounts at /media/kucniadmin/KINGSTON
 # with one folder per show (Bambi, Lilo&Stitch, …). Tilt on a laptop still

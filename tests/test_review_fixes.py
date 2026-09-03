@@ -159,7 +159,7 @@ def test_check_counts_unique_files(tmp_path, capsys):
     assert _cmd_check(cfg) == 0
     out = capsys.readouterr().out
     assert "unique files: 4" in out
-    assert "total episode slots: 40" in out
+    assert "total episode slots: 4" in out
 
 
 def test_removed_show_frees_channel_when_library_still_present(tmp_path):

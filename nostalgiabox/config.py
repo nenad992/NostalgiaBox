@@ -78,7 +78,7 @@ class ChannelConfig:
     # a set of season numbers detected from the path (e.g. S06E01, "Season 6").
     exclude: tuple[str, ...] = ()
     exclude_seasons: frozenset[int] = frozenset()
-    # True for mixed-pool slots: the pool is aired on every mixed channel
+    # True for mixed-pool slots: this channel's dealt shows, not the whole USB.
     # (rotated by sticky home show). This path is the pool root, not a unique deal.
     from_pool: bool = False
 
@@ -91,7 +91,7 @@ class ChannelConfig:
 
 @dataclass(frozen=True)
 class MixedPoolConfig:
-    """One folder of videos mixed across ``count`` channels (full pool each)."""
+    """One folder of videos split across ``count`` channels (unique files)."""
 
     path: Path
     count: int = 10

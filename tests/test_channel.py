@@ -280,7 +280,8 @@ def test_lineup_sticky_across_rebuild(tmp_path):
     assert any(p.parent.name == "Stitch" for p in stitch_b.episodes)
     poke = next(c for c in b if c.name.lower() == "pokemon")
     assert poke.number != stitch_a.number
-    assert all(not c.is_empty for c in b if c.number <= 10)
+    assert not poke.is_empty
+    assert stitch_b.number == stitch_a.number
 
 
 def test_pack_extra_shows_when_all_channels_full(tmp_path):
@@ -351,12 +352,16 @@ def test_mixed_playlists_keep_every_channel_busy(tmp_path):
     pool = list(stitch.iterdir()) + list(poke.iterdir())
     homes = deal_episodes(pool, 10, random.Random(0), root=tmp_path)
     lists = mixed_playlists(pool, homes, root=tmp_path, block_size=3)
-    assert all(len(pl) == 8 for pl in lists)
-    assert all(pl for pl in lists)
     stitch_i = next(i for i, h in enumerate(homes) if h and h[0].parent.name == "Stitch")
     poke_i = next(i for i, h in enumerate(homes) if h and h[0].parent.name == "Pokemon")
+    assert len(lists[stitch_i]) == 5
+    assert len(lists[poke_i]) == 3
     assert lists[stitch_i][0].parent.name == "Stitch"
     assert lists[poke_i][0].parent.name == "Pokemon"
+    assert sum(1 for pl in lists if pl) == 2
+    # A file is on exactly one channel — never the same cartoon on two at once.
+    owned = [p.resolve() for pl in lists for p in pl]
+    assert len(owned) == len(set(owned)) == 8
 
 
 def test_mixed_playlists_stagger_when_one_folder_of_files(tmp_path):
@@ -371,8 +376,9 @@ def test_mixed_playlists_stagger_when_one_folder_of_files(tmp_path):
         files.append(p)
     homes = deal_episodes(files, 10, random.Random(0), root=pool)
     lists = mixed_playlists(files, homes, root=pool, block_size=3)
-    firsts = [pl[0].name for pl in lists]
-    assert len(set(firsts[:4])) == 4
+    firsts = [pl[0].name for pl in lists if pl]
+    assert len(firsts) == 4
+    assert len(set(firsts)) == 4
 
 
 def test_channel_wraps_to_first_episode_not_empty(tmp_path):
@@ -414,9 +420,8 @@ def test_mixed_pool_lineup(tmp_path):
     assert len(dedicated[0].episodes) == 2
     mixed_files = [p.name for c in mixed for p in c.episodes]
     assert len(set(mixed_files)) == 4
-    # Every mixed channel airs the full pool so none sit empty.
-    assert all(not c.is_empty for c in mixed)
-    assert all(len(c.episodes) == 4 for c in mixed)
+    assert len(mixed_files) == 4  # each file on one channel only
+    assert sum(1 for c in mixed if not c.is_empty) == 4
 
 
 def test_same_day_deal_is_stable(tmp_path):

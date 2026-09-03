@@ -421,26 +421,22 @@ def mixed_playlists(
     root: Optional[Path] = None,
     block_size: int = 3,
 ) -> List[List[Path]]:
-    """Every mixed channel airs the full pool so none sit empty or finish early.
+    """Each mixed channel airs only the shows dealt to it.
 
-    Home shows (sticky map) only choose *where the wheel starts*.
+    Files are unique across channels, so two channels cannot play the same
+    cartoon at the same time. Extra shows beyond 10 slots share a channel
+    (see :func:`deal_episodes`). Empty slots stay empty.
     """
-    n = len(home_buckets)
-    if not pool:
-        return [[] for _ in range(n)]
-    base = air_order(pool, random.Random(0), root=root, block_size=block_size)
-    show_names = sorted({show_key(p, root) for p in pool})
+    del pool  # deal already assigned every pool file into home_buckets
     playlists: List[List[Path]] = []
-    for i, home in enumerate(home_buckets):
-        homes = {show_key(p, root) for p in home}
-        if not homes and show_names:
-            homes = {show_names[i % len(show_names)]}
-        playlists.append(rotate_playlist_to_shows(base, homes, root))
-    if playlists and len(playlists[0]) > 1:
-        firsts = {pl[0] for pl in playlists}
-        if len(firsts) == 1:
-            n = len(playlists[0])
-            playlists = [pl[i % n :] + pl[: i % n] for i, pl in enumerate(playlists)]
+    for home in home_buckets:
+        files = list(home)
+        if not files:
+            playlists.append([])
+            continue
+        playlists.append(
+            air_order(files, random.Random(0), root=root, block_size=block_size)
+        )
     return playlists
 
 
