@@ -448,6 +448,63 @@ def test_lineup_sorted_by_number(tmp_path):
     assert lineup.numbers == [3, 9]
 
 
+def test_scan_sxxexx_orders_e2_before_e10(tmp_path):
+    from nostalgiabox.channel import scan_episodes
+
+    folder = tmp_path / "show"
+    folder.mkdir()
+    for name in ("s1e1.mp4", "s1e10.mp4", "s1e2.mp4"):
+        (folder / name).write_bytes(b"x")
+    names = [p.name for p in scan_episodes(folder, [".mp4"])]
+    assert names == ["s1e1.mp4", "s1e2.mp4", "s1e10.mp4"]
+
+
+def test_franchise_key_groups_sequels():
+    from nostalgiabox.channel import franchise_key, show_key
+    from pathlib import Path
+
+    assert franchise_key("Inside Out (2015) - Sinhronizovano") == franchise_key(
+        "Inside Out 2 (2024) - Sinhronizovano"
+    )
+    assert franchise_key("Kung Fu Panda (2008) - Sinhronizovano") == franchise_key(
+        "Kung Fu Panda 2 (2011) - Sinhronizovano"
+    )
+    assert franchise_key("Bambi") == franchise_key("Bambi2")
+    root = Path("/media/kucniadmin/KINGSTON")
+    a = show_key(root / "Inside Out (2015) - Sinhronizovano" / "a.mp4", root)
+    b = show_key(root / "Inside Out 2 (2024) - Sinhronizovano" / "b.mp4", root)
+    assert a == b == "inside out"
+
+
+def test_deal_puts_sequels_on_same_home_channel(tmp_path):
+    from nostalgiabox.channel import deal_episodes
+
+    io1 = tmp_path / "Inside Out (2015) - Sinhronizovano"
+    io2 = tmp_path / "Inside Out 2 (2024) - Sinhronizovano"
+    io1.mkdir()
+    io2.mkdir()
+    (io1 / "m.mp4").write_bytes(b"x")
+    (io2 / "m.mp4").write_bytes(b"x")
+    poke = tmp_path / "Pokemon"
+    poke.mkdir()
+    (poke / "s01e01.mp4").write_bytes(b"x")
+    mapping: dict = {}
+    buckets = deal_episodes(
+        [io1 / "m.mp4", io2 / "m.mp4", poke / "s01e01.mp4"],
+        10,
+        random.Random(0),
+        root=tmp_path,
+        mapping=mapping,
+        channel_numbers=list(range(1, 11)),
+    )
+    io_ch = next(i for i, b in enumerate(buckets) if any("Inside Out" in str(p) for p in b))
+    names = {p.parent.name for p in buckets[io_ch]}
+    assert "Inside Out (2015) - Sinhronizovano" in names
+    assert "Inside Out 2 (2024) - Sinhronizovano" in names
+    poke_ch = next(i for i, b in enumerate(buckets) if b and "Pokemon" in str(b[0]))
+    assert poke_ch != io_ch
+
+
 def test_series_prefix_groups_episodes():
     from nostalgiabox.channel import series_prefix, show_key
     from pathlib import Path

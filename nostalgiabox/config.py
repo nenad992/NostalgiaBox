@@ -127,7 +127,7 @@ class Config:
     crt: CrtConfig = field(default_factory=CrtConfig)
 
     # Audio.
-    initial_volume: int = 70              # 0-100
+    initial_volume: int = 100             # 0-100; TV remote does the rest
     volume_step: int = 5
     audio_device: Optional[str] = None    # mpv audio device (e.g. HDMI); None = auto
     # Kept for YAML compatibility; volume-down at 0 no longer shuts the Pi down.
@@ -373,7 +373,7 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
     start_channel = data.get("start_channel")
     start_channel = int(start_channel) if start_channel is not None else None
 
-    initial_volume = _clamp_int(data.get("initial_volume", 70), 0, 100, "initial_volume")
+    initial_volume = _clamp_int(data.get("initial_volume", 100), 0, 100, "initial_volume")
     volume_step = _clamp_int(data.get("volume_step", 5), 1, 100, "volume_step")
     audio_device = data.get("audio_device")
     audio_device = str(audio_device) if audio_device else None

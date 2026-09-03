@@ -82,7 +82,7 @@ crt:
   scanlines: false
   scanline_intensity: 0.12
 
-initial_volume: 70
+initial_volume: 100
 volume_step: 5
 # fullscreen: true
 

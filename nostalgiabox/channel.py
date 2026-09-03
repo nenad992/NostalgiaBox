@@ -24,7 +24,21 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import AbstractSet, Dict, List, Optional, Sequence
 
-# Patterns for pulling a season number out of a file/folder path.
+_SEASON_EPISODE = (
+    re.compile(r"s(\d{1,2})[ ._-]?e(\d{1,3})", re.IGNORECASE),
+    re.compile(r"\b(\d{1,2})x(\d{1,3})\b"),
+    re.compile(r"v(\d{1,2})e(\d{1,3})", re.IGNORECASE),
+)
+_FRANCHISE_NOISE = re.compile(
+    r"\([^)]*\)|\s*-\s*sinhronizovano\s*",
+    re.IGNORECASE,
+)
+_LEADING_ARTICLE = re.compile(r"^(?:the|a|an)\s+", re.IGNORECASE)
+_TRAILING_SEQUEL = re.compile(
+    r"(?:[\s._-]+(?:part[\s._-]*)?(?:[1-9]|1[0-9]|ii|iii|iv|v|vi)|(?<=[a-z])[2-9])\s*$",
+    re.IGNORECASE,
+)
+_NATURAL_SPLIT = re.compile(r"(\d+)")
 _SEASON_PATTERNS = (
     re.compile(r"s(\d{1,2})[ ._-]?e\d{1,3}", re.IGNORECASE),   # S06E01, s6e1
     re.compile(r"\bseason[ ._-]*(\d{1,2})\b", re.IGNORECASE),  # Season 6
@@ -106,7 +120,7 @@ def scan_episodes(
     except OSError:
         log.warning("scan interrupted for %s", root, exc_info=True)
         return []
-    episodes.sort(key=lambda p: str(p).lower())
+    episodes.sort(key=episode_sort_key)
     return episodes
 
 
@@ -196,6 +210,35 @@ def _index_of_path(ordered: Sequence[Path], current: Path) -> int:
     return -1
 
 
+def franchise_key(name: str) -> str:
+    """Collapse sequels/years so Inside Out 1 and 2 share one home channel."""
+    text = _FRANCHISE_NOISE.sub(" ", name)
+    text = text.replace("&", " ").lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    text = _LEADING_ARTICLE.sub("", text.strip())
+    while True:
+        stripped = _TRAILING_SEQUEL.sub("", text).strip()
+        if stripped == text:
+            break
+        text = stripped
+    return text or name.strip().lower()
+
+
+def episode_sort_key(path: Path) -> tuple:
+    """S01E2 before S01E10 (not lexicographic s1e1, s1e10, s1e2)."""
+    blob = f"{path.parent.name} {path.name}"
+    for pattern in _SEASON_EPISODE:
+        match = pattern.search(blob)
+        if match:
+            return (0, int(match.group(1)), int(match.group(2)), _natural_key(str(path)))
+    return (1, 0, 0, _natural_key(str(path)))
+
+
+def _natural_key(text: str) -> tuple:
+    parts = _NATURAL_SPLIT.split(text.lower())
+    return tuple(int(p) if p.isdigit() else p for p in parts)
+
+
 def series_prefix(stem: str) -> str:
     """Filename without trailing SxxExx / epNN / numbers, for grouping a show."""
     name = stem.strip()
@@ -215,14 +258,14 @@ def show_key(path: Path, root: Optional[Path] = None) -> str:
             if len(rel.parts) > 1:
                 top = rel.parts[0]
                 if detect_season(top) is None and not top.lower().startswith("season"):
-                    return top.lower()
+                    return franchise_key(top)
             return series_prefix(path.stem).lower()
         except ValueError:
             pass
     parent = path.parent.name
     if parent and parent not in (".", "") and detect_season(parent) is None:
         if not parent.lower().startswith("season"):
-            return parent.lower()
+            return franchise_key(parent)
     return series_prefix(path.stem).lower()
 
 
@@ -242,7 +285,7 @@ def air_order(
     for path in episodes:
         groups.setdefault(show_key(path, root), []).append(path)
     for key in groups:
-        groups[key] = sorted(groups[key], key=lambda p: str(p).lower())
+        groups[key] = sorted(groups[key], key=episode_sort_key)
     keys = sorted(groups)
     if len(keys) <= 1:
         return list(groups[keys[0]]) if keys else []
@@ -757,8 +800,11 @@ def build_lineup(
             zip(pool_cfgs, dealt, playlists)
         ):
             folder_homes = _folder_show_names(home_eps, pool_root)
+            home_keys = {show_key(p, pool_root) for p in home_eps}
             if len(folder_homes) == 1:
                 ch_cfg = replace(ch_cfg, name=_prettify_name(folder_homes[0]))
+            elif len(folder_homes) > 1 and len(home_keys) == 1:
+                ch_cfg = replace(ch_cfg, name=_prettify_name(next(iter(home_keys))))
             if not episodes:
                 log.info(
                     "channel %s (%s) has no cartoons in the current library",
@@ -810,6 +856,8 @@ __all__ = [
     "detect_season",
     "deal_episodes",
     "show_key",
+    "franchise_key",
+    "episode_sort_key",
     "series_prefix",
     "channel_rng_seed",
     "mixed_playlists",
