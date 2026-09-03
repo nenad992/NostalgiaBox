@@ -74,6 +74,7 @@ class TVApp:
         self._hdmi_lost_at: Optional[float] = None
         self._hdmi_signal = hdmi_signal_present
         self._media_present = self._library_present()
+        self._media_fp = self._library_fingerprint()
         self._playing_path: Optional[Path] = None
         self._last_channel_number: Optional[int] = None
         self._running = False
@@ -362,6 +363,7 @@ class TVApp:
     def _flash_tune_osd(self, channel: Channel, request: PlayRequest) -> None:
         self.overlay.show_channel_bug(channel.number, channel.name)
         self._flash_guide(channel, request)
+        self.overlay.clear_lineup()
 
     def _flash_guide(self, channel: Channel, request: PlayRequest) -> None:
         now_name, next_name = channel.guide_filenames(request.path)
@@ -426,6 +428,7 @@ class TVApp:
     # -- info / standby -----------------------------------------------------
     def _show_info(self) -> None:
         channel = self.lineup.current
+        self.overlay.clear_lineup()
         self.overlay.show_channel_bug(channel.number, channel.name)
         if self._playing_path is not None:
             now_name, next_name = channel.guide_filenames(self._playing_path)
@@ -494,11 +497,26 @@ class TVApp:
 
     def _confirm_digits(self) -> None:
         if not self._digit_buffer:
+            self._show_lineup()
             return
         number = int(self._digit_buffer)
         self._digit_buffer = ""
         self._digit_deadline = 0.0
         self.select_channel_number(number)
+
+    def _show_lineup(self) -> None:
+        current = self.lineup.current.number
+        rows: list[tuple[int, str, str, bool]] = []
+        for channel in self.lineup:
+            if channel.is_empty:
+                title = "-"
+            elif channel.number == current and self._playing_path is not None:
+                title = self._playing_path.stem
+            else:
+                request = channel.tune_in()
+                title = request.path.stem if request is not None else "-"
+            rows.append((channel.number, channel.name, title, channel.number == current))
+        self.overlay.show_lineup(rows)
 
     def _maybe_commit_digits(self, now: float) -> None:
         if self._digit_buffer and now >= self._digit_deadline:
@@ -532,17 +550,58 @@ class TVApp:
         else:
             self._play_request(request)
 
-    def _library_present(self) -> bool:
+    def _library_roots(self) -> list[Path]:
         if self.config.mixed is not None:
-            roots = [self.config.mixed.path]
-        else:
-            roots = [c.path for c in self.config.channels]
+            return [self.config.mixed.path]
+        return [c.path for c in self.config.channels]
+
+    def _library_present(self) -> bool:
+        roots = self._library_roots()
         if not roots:
             return True
         try:
             return any(p.is_dir() for p in roots)
         except OSError:
             return False
+
+    def _library_fingerprint(self) -> tuple:
+        if not self._library_present():
+            return (False,)
+        items: list[tuple[str, float, int]] = []
+        exts = tuple(e.lower() for e in self.config.video_extensions)
+        for root in self._library_roots():
+            try:
+                if not root.is_dir():
+                    continue
+                for path in root.rglob("*"):
+                    if not path.is_file() or path.suffix.lower() not in exts:
+                        continue
+                    st = path.stat()
+                    items.append((str(path), st.st_mtime, st.st_size))
+            except OSError:
+                continue
+        items.sort()
+        return (True, tuple(items))
+
+    def _tick_library(self) -> None:
+        present = self._library_present()
+        fingerprint = self._library_fingerprint()
+        if present == self._media_present and fingerprint == self._media_fp:
+            return
+        was_present = self._media_present
+        self._media_present = present
+        self._media_fp = fingerprint
+        if present and was_present:
+            log.info("library files changed; remapping")
+            self._refresh_library(keep_playback=True)
+            return
+        if present:
+            log.info("media folder is back; remapping library")
+        else:
+            log.info("media folder missing (USB unplugged?)")
+        self._refresh_library()
+        if not self.standby and not self.hdmi_idle:
+            self.tune_current(show_static=False)
 
     def _resume_snapshot(self) -> dict[int, tuple[Path, float]]:
         out: dict[int, tuple[Path, float]] = {}
@@ -577,6 +636,7 @@ class TVApp:
                 return
             if not self.standby and not self.hdmi_idle:
                 self.tune_current(show_static=False)
+        self._media_fp = self._library_fingerprint()
 
     def _tick_nightly_rescan(self) -> None:
         hour = self.config.library_rescan_hour
@@ -604,19 +664,6 @@ class TVApp:
         if present is not True:
             return False
         return self._playing_path is not None
-
-    def _tick_library(self) -> None:
-        present = self._library_present()
-        if present == self._media_present:
-            return
-        self._media_present = present
-        if present:
-            log.info("media folder is back; remapping library")
-        else:
-            log.info("media folder missing (USB unplugged?)")
-        self._refresh_library()
-        if not self.standby and not self.hdmi_idle:
-            self.tune_current(show_static=False)
 
     # -- helpers ------------------------------------------------------------
     def _remember_position(self) -> None:

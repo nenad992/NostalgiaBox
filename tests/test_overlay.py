@@ -171,3 +171,18 @@ def test_guide_fast_channel_change_replaces_and_rearms(tmp_path):
     clock.advance(0.2)
     om.tick()
     assert 5 not in player.overlays
+
+
+def test_lineup_lists_channels_and_marks_current(tmp_path):
+    player = MockPlayer()
+    om = OverlayManager(player, _config(tmp_path), clock=FakeClock())
+    om.show_lineup(
+        [
+            (1, "Kanal 1", "lilo_e01", False),
+            (2, "Kanal 2", "looney_e03", True),
+        ]
+    )
+    ass = player.overlays[6]
+    assert "CH 01" in ass and "Kanal 1" in ass and "lilo_e01" in ass
+    assert "CH 02" in ass and ">" in ass
+    assert "\\fs32" in ass

@@ -64,6 +64,39 @@ def test_channel_change_now_next_survives_fast_zaps(tmp_path):
     assert 5 not in player.overlays
 
 
+def test_ok_shows_all_channel_lineup_without_changing_channel(tmp_path):
+    app, player, _ = build_app(tmp_path)
+    app.start()
+    assert app.lineup.current.number == 2
+    send(app, Action.ENTER)
+    assert app.lineup.current.number == 2
+    listing = player.overlays.get(6, "")
+    assert "CH 02" in listing and "CH 03" in listing and "CH 04" in listing
+    assert ">" in listing
+    assert "NOW" not in listing
+
+
+def test_info_shows_this_channel_now_next_not_full_lineup(tmp_path):
+    app, player, _ = build_app(tmp_path)
+    app.start()
+    send(app, Action.ENTER)
+    send(app, Action.INFO)
+    assert 6 not in player.overlays
+    bug = player.overlays.get(1, "")
+    guide = player.overlays.get(5, "")
+    assert "Dragon Tales" in bug
+    assert "NOW" in guide and "NEXT" in guide
+
+
+def test_enter_still_confirms_typed_channel(tmp_path):
+    app, player, _ = build_app(tmp_path)
+    app.start()
+    send(app, Action.DIGIT, 4)
+    send(app, Action.ENTER)
+    assert app.lineup.current.number == 4
+    assert 6 not in player.overlays
+
+
 def test_now_next_osd_matches_playing_file_on_mixed_channels(tmp_path, monkeypatch):
     import nostalgiabox.channel as channel_mod
 
@@ -364,7 +397,7 @@ def test_finishing_last_episode_picks_up_new_file(tmp_path, monkeypatch):
     assert player.current.name == "s01e02.mp4"
 
 
-def test_nightly_rescan_adds_files_without_stopping_current(tmp_path):
+def test_usb_files_appear_without_unplugging(tmp_path):
     pool = tmp_path / "usb"
     show = pool / "Stitch"
     show.mkdir(parents=True)
@@ -400,16 +433,12 @@ def test_nightly_rescan_adds_files_without_stopping_current(tmp_path):
     assert playing is not None
     (show / "s01e02.mp4").write_bytes(b"x")
     app.step()
-    names_before = {p.name for c in app.lineup for p in c.episodes}
-    assert "s01e02.mp4" not in names_before
-    wall.dt = datetime(2026, 9, 1, 4, 0, 0)
-    app.step()
-    names_after = {p.name for c in app.lineup for p in c.episodes}
-    assert "s01e02.mp4" in names_after
+    names = {p.name for c in app.lineup for p in c.episodes}
+    assert "s01e02.mp4" in names
     assert player.current == playing
 
 
-def test_nightly_rescan_skipped_when_hdmi_playing(tmp_path):
+def test_new_usb_files_appear_while_hdmi_is_live(tmp_path):
     pool = tmp_path / "usb"
     show = pool / "Stitch"
     show.mkdir(parents=True)
@@ -442,10 +471,9 @@ def test_nightly_rescan_skipped_when_hdmi_playing(tmp_path):
     app._hdmi_signal = lambda: True
     app.start()
     (show / "s01e02.mp4").write_bytes(b"x")
-    wall.dt = datetime(2026, 9, 1, 4, 0, 0)
     app.step()
     names = {p.name for c in app.lineup for p in c.episodes}
-    assert "s01e02.mp4" not in names
+    assert "s01e02.mp4" in names
 
 
 def test_quit_stops_running(tmp_path):

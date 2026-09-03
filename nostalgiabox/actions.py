@@ -23,8 +23,8 @@ class Action(Enum):
     VOLUME_DOWN = auto()
     MUTE = auto()
     DIGIT = auto()          # carries which digit in InputEvent.value (0-9)
-    ENTER = auto()          # confirm a direct channel entry ("OK" / select)
-    INFO = auto()           # re-show the channel banner
+    ENTER = auto()          # OK: confirm a typed channel, or open the lineup
+    INFO = auto()           # this channel's banner + NOW/NEXT
     LAST_CHANNEL = auto()   # jump back to the previously watched channel
     POWER = auto()          # toggle standby (blank screen)
     QUIT = auto()           # shut the application down entirely

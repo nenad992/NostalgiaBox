@@ -17,7 +17,7 @@ scales it to the TV) and cleared automatically after a few seconds by
 from __future__ import annotations
 
 import time
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Sequence
 
 from .config import Config, UiConfig
 from .player import Player
@@ -42,6 +42,7 @@ _ID_VOLUME = 2
 _ID_STANDBY = 3
 _ID_MESSAGE = 4
 _ID_GUIDE = 5
+_ID_LINEUP = 6
 
 _BLACK = "&H00000000"
 
@@ -78,6 +79,7 @@ class OverlayManager:
     ) -> None:
         """Bottom NOW / NEXT filenames. Replacing this overlay resets the timer."""
         dur = self._config.channel_bug_seconds if duration is None else duration
+        self.clear_lineup()
         ass = _guide_ass(now_title, next_title, self._ui)
         self._player.set_overlay(_ID_GUIDE, ass, CANVAS_W, CANVAS_H)
         self._arm(_ID_GUIDE, dur)
@@ -85,6 +87,23 @@ class OverlayManager:
     def clear_guide(self) -> None:
         self._player.clear_overlay(_ID_GUIDE)
         self._expiry.pop(_ID_GUIDE, None)
+
+    def show_lineup(
+        self,
+        rows: Sequence[tuple[int, str, str, bool]],
+        *,
+        duration: Optional[float] = None,
+    ) -> None:
+        """All channels and what's on now. Replacing this overlay resets the timer."""
+        dur = self._config.channel_bug_seconds if duration is None else duration
+        self.clear_guide()
+        ass = _lineup_ass(rows, self._ui)
+        self._player.set_overlay(_ID_LINEUP, ass, CANVAS_W, CANVAS_H)
+        self._arm(_ID_LINEUP, dur)
+
+    def clear_lineup(self) -> None:
+        self._player.clear_overlay(_ID_LINEUP)
+        self._expiry.pop(_ID_LINEUP, None)
 
     def show_volume(
         self, level: int, muted: bool, *, duration: Optional[float] = None
@@ -124,7 +143,14 @@ class OverlayManager:
                 self._expiry.pop(overlay_id, None)
 
     def clear_all(self) -> None:
-        for overlay_id in (_ID_CHANNEL, _ID_VOLUME, _ID_STANDBY, _ID_MESSAGE, _ID_GUIDE):
+        for overlay_id in (
+            _ID_CHANNEL,
+            _ID_VOLUME,
+            _ID_STANDBY,
+            _ID_MESSAGE,
+            _ID_GUIDE,
+            _ID_LINEUP,
+        ):
             self._player.clear_overlay(overlay_id)
         self._expiry.clear()
 
@@ -190,6 +216,22 @@ def _guide_ass(now_title: str, next_title: str, ui: UiConfig) -> str:
         f"NEXT  {_escape(next_title)}"
     )
     return "\n".join([now_line, next_line])
+
+
+def _lineup_ass(rows: Sequence[tuple[int, str, str, bool]], ui: UiConfig) -> str:
+    """Left-aligned channel list; current row marked with ``>``."""
+    parts: list[str] = []
+    y = _IY0
+    for number, name, title, current in rows:
+        mark = ">" if current else " "
+        label = f"{mark} CH {number:02d}  {_escape(name)}  {_escape(title)}"
+        if len(label) > 56:
+            label = label[:55] + "..."
+        parts.append(
+            rf"{{\an7\pos({_IX0},{y}){_style(ui, size=32)}}}{label}"
+        )
+        y += 42
+    return "\n".join(parts)
 
 
 def _volume_ass(level: int, muted: bool, ui: UiConfig) -> str:
