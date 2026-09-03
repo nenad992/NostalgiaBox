@@ -193,7 +193,7 @@ def _style(ui: UiConfig, *, size: int, alpha: int = 0) -> str:
 def _channel_bug_ass(number: int, name: str, ui: UiConfig) -> str:
     """Green digital 'CH 03' + show name, flashed inside the top-right of the frame."""
     num = f"{number:02d}"
-    plate_w, plate_h = 540, 210
+    plate_w, plate_h = 400, 155
     plate = _filled_rect(
         x=_IX1 - plate_w,
         y=_IY0 - 10,
@@ -206,7 +206,7 @@ def _channel_bug_ass(number: int, name: str, ui: UiConfig) -> str:
         rf"{{\an9\pos({_IX1},{_IY0}){_style(ui, size=104)}}}CH {num}"
     )
     name_line = (
-        rf"{{\an9\pos({_IX1},{_IY0 + 122}){_style(ui, size=48)}}}{_escape(name)}"
+        rf"{{\an9\pos({_IX1},{_IY0 + 98}){_style(ui, size=48)}}}{_escape(name)}"
     )
     return "\n".join([plate, number_line, name_line])
 

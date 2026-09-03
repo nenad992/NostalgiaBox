@@ -36,6 +36,7 @@ def test_channel_bug_drawn_and_expires(tmp_path):
     assert "\\fs104" in ass
     assert "\\fs48" in ass
     assert "\\p1" in ass  # dark backing plate
+    assert "\\pos(778,47)" in ass  # tighter plate than the old 540x210 box
     assert "\\blur4" not in ass
     assert "\\bord3" in ass
 

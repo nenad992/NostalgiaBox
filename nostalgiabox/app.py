@@ -83,6 +83,7 @@ class TVApp:
         self._digit_buffer = ""
         self._digit_deadline = 0.0
         self._digit_entry_timeout = 2.0
+        self._lineup_cursor: Optional[int] = None
 
         # Pending "bridge" switch: keep the old show playing until this deadline,
         # then cut to the channel that was preloaded. The channel banner is shown
@@ -277,18 +278,31 @@ class TVApp:
         self._step_channel(-1)
 
     def _step_channel(self, direction: int) -> None:
-        browsing = self.overlay.lineup_active()
+        if self.overlay.lineup_active():
+            numbers = self.lineup.numbers
+            if not numbers:
+                return
+            current = self._lineup_cursor
+            if current not in numbers:
+                current = self.lineup.current.number
+            index = numbers.index(current)
+            # List is CH1 at the top: remote UP (-index) / DOWN (+index).
+            index = (index - direction) % len(numbers)
+            self._lineup_cursor = numbers[index]
+            self._show_lineup()
+            return
         self._remember_position()
         self._last_channel_number = self.lineup.current.number
         if direction > 0:
             self.lineup.up()
         else:
             self.lineup.down()
-        self.tune_current(show_static=not browsing, show_osd=not browsing)
-        if browsing:
-            self._show_lineup()
+        self.tune_current()
 
     def _jump_last_channel(self) -> None:
+        if self.overlay.lineup_active():
+            self._dismiss_lineup()
+            return
         if self._last_channel_number is None:
             return
         target = self._last_channel_number
@@ -439,6 +453,7 @@ class TVApp:
     def _show_info(self) -> None:
         channel = self.lineup.current
         self.overlay.clear_lineup()
+        self._lineup_cursor = None
         self.overlay.show_channel_bug(channel.number, channel.name)
         if self._playing_path is not None:
             now_name, next_name = channel.guide_filenames(self._playing_path)
@@ -507,25 +522,43 @@ class TVApp:
 
     def _confirm_digits(self) -> None:
         if not self._digit_buffer:
-            self._show_lineup()
+            if self.overlay.lineup_active():
+                self._commit_lineup()
+            else:
+                self._lineup_cursor = self.lineup.current.number
+                self._show_lineup()
             return
         number = int(self._digit_buffer)
         self._digit_buffer = ""
         self._digit_deadline = 0.0
         self.select_channel_number(number)
 
+    def _commit_lineup(self) -> None:
+        target = self._lineup_cursor
+        self._dismiss_lineup()
+        if target is None or target == self.lineup.current.number:
+            return
+        self.select_channel_number(target)
+
+    def _dismiss_lineup(self) -> None:
+        self._lineup_cursor = None
+        self.overlay.clear_lineup()
+
     def _show_lineup(self) -> None:
-        current = self.lineup.current.number
+        cursor = self._lineup_cursor
+        if cursor is None:
+            cursor = self.lineup.current.number
+            self._lineup_cursor = cursor
         rows: list[tuple[int, str, str, bool]] = []
         for channel in self.lineup:
             if channel.is_empty:
                 title = "-"
-            elif channel.number == current and self._playing_path is not None:
+            elif channel.number == self.lineup.current.number and self._playing_path is not None:
                 title = self._playing_path.stem
             else:
                 request = channel.tune_in()
                 title = request.path.stem if request is not None else "-"
-            rows.append((channel.number, channel.name, title, channel.number == current))
+            rows.append((channel.number, channel.name, title, channel.number == cursor))
         self.overlay.show_lineup(rows)
 
     def _maybe_commit_digits(self, now: float) -> None:

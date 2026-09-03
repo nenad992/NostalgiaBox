@@ -76,26 +76,42 @@ def test_ok_shows_all_channel_lineup_without_changing_channel(tmp_path):
     assert "NOW" not in listing
 
 
-def test_lineup_arrows_tune_and_restart_timer(tmp_path):
+def test_ok_toggles_lineup_closed_without_changing_channel(tmp_path):
+    app, player, _ = build_app(tmp_path)
+    app.start()
+    send(app, Action.ENTER)
+    assert 6 in player.overlays
+    send(app, Action.ENTER)
+    assert 6 not in player.overlays
+    assert app.lineup.current.number == 2
+
+
+def test_lineup_arrows_browse_then_ok_tunes(tmp_path):
     app, player, clock = build_app(tmp_path, bridge_seconds=0)
     app.start()
     send(app, Action.ENTER)
     assert app.lineup.current.number == 2
     clock.advance(3.0)
-    send(app, Action.CHANNEL_UP)
-    assert app.lineup.current.number == 3
+    send(app, Action.CHANNEL_DOWN)
+    assert app.lineup.current.number == 2
     listing = player.overlays[6]
-    assert "> CH 03" in listing or (">" in listing and "CH 03" in listing)
-    assert 5 not in player.overlays
+    assert "> CH 03" in listing
     clock.advance(4.9)
     app.overlay.tick()
     assert 6 in player.overlays
-    clock.advance(0.2)
-    app.overlay.tick()
+    send(app, Action.ENTER)
+    assert app.lineup.current.number == 3
     assert 6 not in player.overlays
+
+
+def test_lineup_back_dismisses_without_tuning(tmp_path):
+    app, player, _ = build_app(tmp_path, bridge_seconds=0)
+    app.start()
+    send(app, Action.ENTER)
     send(app, Action.CHANNEL_DOWN)
+    send(app, Action.LAST_CHANNEL)
+    assert 6 not in player.overlays
     assert app.lineup.current.number == 2
-    assert 5 in player.overlays
 
 
 
