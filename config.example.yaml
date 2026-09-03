@@ -7,10 +7,10 @@
 #     nostalgiabox --check
 
 # -----------------------------------------------------------------------------
-# Mixed pool: one USB folder, 10 channels. Each *show* (franchise) lives on
-# one home channel. Extra shows pack onto the lightest channel. A file airs
-# on exactly one channel, so two channels never play the same cartoon at once.
-# Empty slots: empty_channel_message.
+# Mixed pool: one USB folder, 10 channels. Fat series are split into ordered
+# slices (~20 episodes) so Lilo can live on two channels as *different*
+# episodes. Each file still airs on exactly one channel. Slices are mixed
+# (at most 3 of one show, then another). Empty slots: empty_channel_message.
 #
 # Pi (this box): Kingston USB auto-mounts at /media/kucniadmin/KINGSTON
 # with one folder per show (Bambi, Lilo&Stitch, …). Tilt on a laptop still

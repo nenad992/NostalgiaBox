@@ -610,3 +610,63 @@ def test_flat_mixed_pool_keeps_kanal_channel_names(tmp_path):
     assert all(n.startswith("Kanal") for n in names)
     assert "S1E1" not in names
 
+
+def test_mix_slice_target_is_at_least_twenty():
+    from nostalgiabox.channel import mix_slice_target
+
+    assert mix_slice_target(197, 10) == 20
+    assert mix_slice_target(400, 10) == 40
+    assert mix_slice_target(8, 10) == 20
+
+
+def test_long_show_is_sliced_across_channels_in_order(tmp_path):
+    from nostalgiabox.channel import deal_episodes
+
+    show = tmp_path / "Lilo"
+    show.mkdir()
+    files = []
+    for i in range(1, 46):
+        p = show / f"s01e{i:02d}.mp4"
+        p.write_bytes(b"x")
+        files.append(p)
+    buckets = deal_episodes(
+        files, 10, random.Random(0), root=tmp_path, channel_numbers=list(range(1, 11))
+    )
+    nonempty = [b for b in buckets if b]
+    assert len(nonempty) == 3
+    sizes = sorted(len(b) for b in nonempty)
+    assert sizes == [5, 20, 20]
+    owned = [p.resolve() for b in buckets for p in b]
+    assert len(owned) == len(set(owned)) == 45
+    for bucket in nonempty:
+        idxs = [int(p.stem.replace("s01e", "")) for p in bucket]
+        assert idxs == sorted(idxs)
+        assert idxs[-1] - idxs[0] + 1 == len(idxs)
+
+
+def test_sliced_channels_stay_near_even_with_one_fat_show(tmp_path):
+    from nostalgiabox.channel import deal_episodes
+
+    files = []
+    fat = tmp_path / "Looney"
+    fat.mkdir()
+    for i in range(97):
+        p = fat / f"e{i:03d}.mp4"
+        p.write_bytes(b"x")
+        files.append(p)
+    for n in range(10):
+        folder = tmp_path / f"Alpha{n:02d}"
+        folder.mkdir()
+        p = folder / "film.mp4"
+        p.write_bytes(b"x")
+        files.append(p)
+    buckets = deal_episodes(
+        files, 10, random.Random(0), root=tmp_path, channel_numbers=list(range(1, 11))
+    )
+    sizes = [len(b) for b in buckets]
+    assert min(sizes) >= 1
+    assert max(sizes) - min(sizes) <= 20
+    assert sum(sizes) == 107
+    owned = [p.resolve() for b in buckets for p in b]
+    assert len(set(owned)) == 107
+

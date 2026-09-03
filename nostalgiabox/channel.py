@@ -308,6 +308,45 @@ def air_order(
     return ordered
 
 
+def mix_slice_target(
+    n_files: int,
+    n_channels: int,
+    *,
+    minimum: int = 20,
+) -> int:
+    """Max episodes per franchise slice (~even split, at least ``minimum``)."""
+    if n_channels < 1:
+        return max(1, minimum)
+    even = (max(0, n_files) + n_channels - 1) // n_channels
+    return max(1, minimum, even)
+
+
+def _slice_key(franchise: str, index: int) -> str:
+    return f"{franchise}#{index}"
+
+
+def _franchise_slices(files: Sequence[Path], target: int) -> List[List[Path]]:
+    ordered = sorted(files, key=episode_sort_key)
+    if not ordered:
+        return []
+    if len(ordered) <= target:
+        return [ordered]
+    return [ordered[i : i + target] for i in range(0, len(ordered), target)]
+
+
+def _migrate_legacy_show_keys(
+    owned: Dict[str, int], slice_keys: AbstractSet[str], valid: AbstractSet[int]
+) -> None:
+    """Map pre-slice keys (``stitch``) onto ``stitch#0``."""
+    for key in list(owned):
+        if "#" in key:
+            continue
+        sliced = _slice_key(key, 0)
+        if sliced in slice_keys and sliced not in owned and owned[key] in valid:
+            owned[sliced] = owned[key]
+        del owned[key]
+
+
 def load_show_map(path: Optional[Path]) -> Dict[str, int]:
     """Persistent show-key -> channel number (Stitch stays on CH1)."""
     if path is None or not path.is_file():
@@ -348,12 +387,13 @@ def deal_episodes(
     mapping: Optional[Dict[str, int]] = None,
     channel_numbers: Optional[Sequence[int]] = None,
 ) -> List[List[Path]]:
-    """Put each *show* on a sticky channel. New shows take the next empty slot.
+    """Deal franchise *slices* onto channels so file counts stay even.
 
-    Already-mapped shows never move (Pokemon stays on CH1). Extra shows beyond
-    the channel count share the least-full channel. ``mapping`` is updated
-    in place when provided.
+    Fat shows (more than ~20 episodes) split into ordered slices and may live
+    on several channels (different episodes, never the same file twice).
+    ``mapping`` is updated in place when provided (keys are ``show#slice``).
     """
+    del rng  # kept so callers/tests can pass a Random for a stable API
     if n_channels < 1:
         raise ValueError("n_channels must be >= 1")
     numbers = list(channel_numbers) if channel_numbers is not None else list(
@@ -366,36 +406,38 @@ def deal_episodes(
     groups: Dict[str, List[Path]] = {}
     for path in episodes:
         groups.setdefault(show_key(path, root), []).append(path)
+    target = mix_slice_target(len(episodes), n_channels)
+    slices: Dict[str, List[Path]] = {}
+    for franchise, files in groups.items():
+        for i, chunk in enumerate(_franchise_slices(files, target)):
+            slices[_slice_key(franchise, i)] = chunk
     owned: Dict[str, int] = {} if mapping is None else mapping
-    if groups:
+    if slices:
+        _migrate_legacy_show_keys(owned, set(slices), valid)
         for key in list(owned):
-            if key not in groups or owned.get(key) not in valid:
+            if key not in slices or owned.get(key) not in valid:
                 del owned[key]
     else:
         for key, number in list(owned.items()):
             if number not in valid:
                 del owned[key]
-    used = {n for n in owned.values() if n in valid}
-    empty = [n for n in numbers if n not in used]
-    new_keys = sorted(k for k in groups if k not in owned)
+    load = [0] * n_channels
+    for key, files in slices.items():
+        number = owned.get(key)
+        if number in valid:
+            load[index_of[number]] += len(files)
+    new_keys = [k for k in slices if k not in owned]
+    new_keys.sort(key=lambda k: (-len(slices[k]), k))
     for key in new_keys:
-        if empty:
-            owned[key] = empty.pop(0)
-        else:
-            # Every channel already has a show: park extras on the smallest pile.
-            def _load(n: int) -> int:
-                return sum(len(groups[k]) for k, ch in owned.items() if ch == n)
-
-            owned[key] = min(numbers, key=_load)
-        used.add(owned[key])
-        empty = [n for n in numbers if n not in used]
+        lightest = min(range(n_channels), key=lambda i: (load[i], i))
+        owned[key] = numbers[lightest]
+        load[lightest] += len(slices[key])
     buckets: List[List[Path]] = [[] for _ in range(n_channels)]
-    for key, files in groups.items():
+    for key, files in slices.items():
         number = owned.get(key)
         if number is None:
             continue
-        i = index_of[number]
-        buckets[i].extend(sorted(files, key=lambda p: str(p).lower()))
+        buckets[index_of[number]].extend(files)
     return buckets
 
 
@@ -421,11 +463,11 @@ def mixed_playlists(
     root: Optional[Path] = None,
     block_size: int = 3,
 ) -> List[List[Path]]:
-    """Each mixed channel airs only the shows dealt to it.
+    """Each mixed channel airs only the slices dealt to it.
 
     Files are unique across channels, so two channels cannot play the same
-    cartoon at the same time. Extra shows beyond 10 slots share a channel
-    (see :func:`deal_episodes`). Empty slots stay empty.
+    cartoon at the same time. A fat franchise may occupy several channels as
+    different episode slices (see :func:`deal_episodes`). Empty slots stay empty.
     """
     del pool  # deal already assigned every pool file into home_buckets
     playlists: List[List[Path]] = []
@@ -851,6 +893,7 @@ __all__ = [
     "scan_episodes",
     "detect_season",
     "deal_episodes",
+    "mix_slice_target",
     "show_key",
     "franchise_key",
     "episode_sort_key",

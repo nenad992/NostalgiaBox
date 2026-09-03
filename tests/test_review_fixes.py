@@ -180,7 +180,8 @@ def test_removed_show_frees_channel_when_library_still_present(tmp_path):
         channel_numbers=list(range(1, 11)),
     )
     assert "stitch" not in mapping
-    assert mapping["pokemon"] == 2
+    assert "stitch#0" not in mapping
+    assert mapping["pokemon#0"] == 2
 
 
 def test_empty_pool_does_not_wipe_sticky_map(tmp_path):
