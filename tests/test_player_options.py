@@ -12,6 +12,17 @@ def test_headless_linux_uses_gpu_drm():
     if use_drm_gpu_output():
         assert opts["vo"] == "gpu"
         assert opts["gpu_context"] == "drm"
+        assert opts["drm_mode"] == "1920x1080"
+
+
+def test_pi_kms_caps_output_at_1080p(monkeypatch):
+    import nostalgiabox.player as player_mod
+
+    monkeypatch.setattr(player_mod, "use_drm_gpu_output", lambda **_k: True)
+    opts = player_mod.mpv_player_options(fullscreen=True)
+    assert opts["drm_mode"] == "1920x1080"
+    assert opts["framedrop"] == "vo"
+    assert opts["opengl_es"] == "yes"
 
 
 def test_force_window_yes_is_valid_for_libmpv():

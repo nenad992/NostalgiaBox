@@ -127,9 +127,14 @@ class TVApp:
                 assets = assets_dir or config.assets_dir or DEFAULT_ASSETS_DIR
                 crt = config.crt
                 hwdec = "auto-safe"
-                # Pi 4: auto-safe tries CUDA; GLSL scanlines on 1080p stall the GPU.
+                # Pi 4: auto-safe tries CUDA; 4K+scanlines stall. Corners only.
                 if use_drm_gpu_output():
-                    crt = replace(crt, scanlines=False)
+                    crt = replace(
+                        crt,
+                        scanlines=False,
+                        curvature=0.0,
+                        vignette=0.0,
+                    )
                     hwdec = "v4l2m2m"
                 shader_path = write_shader(crt)
                 player = MpvPlayer(

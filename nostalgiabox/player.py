@@ -163,10 +163,15 @@ def mpv_player_options(
         cursor_autohide="always",
         osd_font_size=40,
     )
-    # Default vo=drm on a Pi console cannot run GLSL user shaders (no CRT).
+    # Pi 4 cannot shade 4K (this TV was 4096x2160@30). Cap at 1080p and keep
+    # the CRT hook cheap so rounded corners do not stall the GPU.
     if use_drm_gpu_output():
         options["vo"] = "gpu"
         options["gpu_context"] = "drm"
+        options["drm_mode"] = "1920x1080"
+        options["opengl_es"] = "yes"
+        options["framedrop"] = "vo"
+        options["video_sync"] = "audio"
         options["scale"] = "bilinear"
         options["cscale"] = "bilinear"
         options["dscale"] = "bilinear"
