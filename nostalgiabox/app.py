@@ -271,16 +271,22 @@ class TVApp:
 
     # -- channel changing ---------------------------------------------------
     def _channel_up(self) -> None:
-        self._remember_position()
-        self._last_channel_number = self.lineup.current.number
-        self.lineup.up()
-        self.tune_current()
+        self._step_channel(+1)
 
     def _channel_down(self) -> None:
+        self._step_channel(-1)
+
+    def _step_channel(self, direction: int) -> None:
+        browsing = self.overlay.lineup_active()
         self._remember_position()
         self._last_channel_number = self.lineup.current.number
-        self.lineup.down()
-        self.tune_current()
+        if direction > 0:
+            self.lineup.up()
+        else:
+            self.lineup.down()
+        self.tune_current(show_static=not browsing, show_osd=not browsing)
+        if browsing:
+            self._show_lineup()
 
     def _jump_last_channel(self) -> None:
         if self._last_channel_number is None:
@@ -307,7 +313,7 @@ class TVApp:
         self.tune_current()
         return True
 
-    def tune_current(self, *, show_static: bool = True) -> None:
+    def tune_current(self, *, show_static: bool = True, show_osd: bool = True) -> None:
         """Tune into the currently selected channel."""
         if self.hdmi_idle:
             return
@@ -321,20 +327,23 @@ class TVApp:
 
         if request is None:
             # No episodes on this channel: show the "no signal" screen.
-            self.overlay.show_channel_bug(channel.number, channel.name)
-            self.overlay.clear_guide()
+            if show_osd:
+                self.overlay.show_channel_bug(channel.number, channel.name)
+                self.overlay.clear_guide()
             self._show_no_signal(channel)
             return
 
         if not show_static:
             # Not a channel change (first tune / waking from standby): play now.
             self._switch_deadline = None
-            self._flash_tune_osd(channel, request)
+            if show_osd:
+                self._flash_tune_osd(channel, request)
             self._play_request(request)
         elif self._transition_path is not None:
             # Transition clip (glitch/static) + preloaded episode.
             self._switch_deadline = None
-            self._flash_tune_osd(channel, request)
+            if show_osd:
+                self._flash_tune_osd(channel, request)
             self._playing_path = request.path
             self.player.play_transition(
                 self._transition_path,
@@ -348,12 +357,13 @@ class TVApp:
             # shown at the cut-over (see _maybe_commit_switch), not right now.
             self._playing_path = request.path
             self.player.preload_next(request.path, start=request.start)
-            self._switch_deadline = self._clock() + self.config.bridge_seconds
-            self._pending_banner = (channel.number, channel.name)
             self._pending_request = request
+            self._pending_banner = (channel.number, channel.name) if show_osd else None
+            self._switch_deadline = self._clock() + self.config.bridge_seconds
         else:
             self._switch_deadline = None
-            self._flash_tune_osd(channel, request)
+            if show_osd:
+                self._flash_tune_osd(channel, request)
             self._play_request(request)
 
     def _play_request(self, request: PlayRequest) -> None:

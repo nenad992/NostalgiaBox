@@ -76,6 +76,29 @@ def test_ok_shows_all_channel_lineup_without_changing_channel(tmp_path):
     assert "NOW" not in listing
 
 
+def test_lineup_arrows_tune_and_restart_timer(tmp_path):
+    app, player, clock = build_app(tmp_path, bridge_seconds=0)
+    app.start()
+    send(app, Action.ENTER)
+    assert app.lineup.current.number == 2
+    clock.advance(3.0)
+    send(app, Action.CHANNEL_UP)
+    assert app.lineup.current.number == 3
+    listing = player.overlays[6]
+    assert "> CH 03" in listing or (">" in listing and "CH 03" in listing)
+    assert 5 not in player.overlays
+    clock.advance(4.9)
+    app.overlay.tick()
+    assert 6 in player.overlays
+    clock.advance(0.2)
+    app.overlay.tick()
+    assert 6 not in player.overlays
+    send(app, Action.CHANNEL_DOWN)
+    assert app.lineup.current.number == 2
+    assert 5 in player.overlays
+
+
+
 def test_info_shows_this_channel_now_next_not_full_lineup(tmp_path):
     app, player, _ = build_app(tmp_path)
     app.start()

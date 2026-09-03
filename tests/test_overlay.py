@@ -35,6 +35,9 @@ def test_channel_bug_drawn_and_expires(tmp_path):
     assert "CH 03" in ass and "Arthur" in ass
     assert "\\fs104" in ass
     assert "\\fs48" in ass
+    assert "\\p1" in ass  # dark backing plate
+    assert "\\blur4" not in ass
+    assert "\\bord3" in ass
 
     clock.advance(4.9)
     om.tick()
@@ -148,6 +151,8 @@ def test_guide_shows_now_and_next_and_expires(tmp_path):
     assert "NOW  stitch_s01e01" in ass
     assert "NEXT  pokemon_s01e02" in ass
     assert "\\fs40" in ass
+    assert "\\p1" in ass
+    assert "\\blur4" not in ass
     clock.advance(4.9)
     om.tick()
     assert 5 in player.overlays
@@ -174,8 +179,9 @@ def test_guide_fast_channel_change_replaces_and_rearms(tmp_path):
 
 
 def test_lineup_lists_channels_and_marks_current(tmp_path):
+    clock = FakeClock()
     player = MockPlayer()
-    om = OverlayManager(player, _config(tmp_path), clock=FakeClock())
+    om = OverlayManager(player, _config(tmp_path), clock=clock)
     om.show_lineup(
         [
             (1, "Kanal 1", "lilo_e01", False),
@@ -185,4 +191,13 @@ def test_lineup_lists_channels_and_marks_current(tmp_path):
     ass = player.overlays[6]
     assert "CH 01" in ass and "Kanal 1" in ass and "lilo_e01" in ass
     assert "CH 02" in ass and ">" in ass
-    assert "\\fs32" in ass
+    assert "^" in ass and "v" in ass
+    assert "\\fs36" in ass
+    assert "\\p1" in ass
+    assert "\\blur4" not in ass
+    clock.advance(4.9)
+    om.tick()
+    assert 6 in player.overlays
+    clock.advance(0.2)
+    om.tick()
+    assert 6 not in player.overlays

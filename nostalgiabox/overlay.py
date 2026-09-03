@@ -45,6 +45,8 @@ _ID_GUIDE = 5
 _ID_LINEUP = 6
 
 _BLACK = "&H00000000"
+_PANEL = _BLACK
+_PANEL_ALPHA = 0x55  # ASS alpha: 00 opaque, FF clear. ~67% dark plate.
 
 
 class OverlayManager:
@@ -100,6 +102,9 @@ class OverlayManager:
         ass = _lineup_ass(rows, self._ui)
         self._player.set_overlay(_ID_LINEUP, ass, CANVAS_W, CANVAS_H)
         self._arm(_ID_LINEUP, dur)
+
+    def lineup_active(self) -> bool:
+        return _ID_LINEUP in self._expiry
 
     def clear_lineup(self) -> None:
         self._player.clear_overlay(_ID_LINEUP)
@@ -174,15 +179,11 @@ def _hex_to_ass(hex_color: str, alpha: int = 0) -> str:
 
 
 def _style(ui: UiConfig, *, size: int, alpha: int = 0) -> str:
-    """Common ASS override tags: retro font, green fill, and a soft CRT glow."""
+    """Retro green type: black outline so letters stay readable over video."""
     color = _hex_to_ass(ui.color, alpha)
     tags = rf"\fn{ui.font}\b1\fs{size}\c{color}\1a&H{alpha:02X}&"
-    if ui.glow:
-        # A blurred green border reads as phosphor bloom; a faint dark edge keeps
-        # it legible over bright video.
-        tags += rf"\bord2\blur4\3c{color}\4c{_BLACK}\shad0"
-    else:
-        tags += rf"\bord2\3c{_BLACK}\shad0"
+    # Black edge, no green bloom — the old glow washed the glyphs out.
+    tags += rf"\bord3\blur0\3c{_BLACK}\shad1\4c{_BLACK}"
     return tags
 
 
@@ -192,13 +193,22 @@ def _style(ui: UiConfig, *, size: int, alpha: int = 0) -> str:
 def _channel_bug_ass(number: int, name: str, ui: UiConfig) -> str:
     """Green digital 'CH 03' + show name, flashed inside the top-right of the frame."""
     num = f"{number:02d}"
+    plate_w, plate_h = 540, 210
+    plate = _filled_rect(
+        x=_IX1 - plate_w,
+        y=_IY0 - 10,
+        w=plate_w,
+        h=plate_h,
+        fill=_PANEL,
+        fill_alpha=_PANEL_ALPHA,
+    )
     number_line = (
         rf"{{\an9\pos({_IX1},{_IY0}){_style(ui, size=104)}}}CH {num}"
     )
     name_line = (
         rf"{{\an9\pos({_IX1},{_IY0 + 122}){_style(ui, size=48)}}}{_escape(name)}"
     )
-    return "\n".join([number_line, name_line])
+    return "\n".join([plate, number_line, name_line])
 
 
 def _guide_ass(now_title: str, next_title: str, ui: UiConfig) -> str:
@@ -207,6 +217,14 @@ def _guide_ass(now_title: str, next_title: str, ui: UiConfig) -> str:
     ``\\an8`` (top-centre) so the block grows downward from a y that already
     clears the rounded-corner crop — ``\\an2`` at the safe edge sat in the mask.
     """
+    plate = _filled_rect(
+        x=_IX0,
+        y=_IY1 - 136,
+        w=_IX1 - _IX0,
+        h=128,
+        fill=_PANEL,
+        fill_alpha=_PANEL_ALPHA,
+    )
     now_line = (
         rf"{{\an8\pos({_FRAME_CX},{_IY1 - 120}){_style(ui, size=40)}}}"
         f"NOW  {_escape(now_title)}"
@@ -215,22 +233,41 @@ def _guide_ass(now_title: str, next_title: str, ui: UiConfig) -> str:
         rf"{{\an8\pos({_FRAME_CX},{_IY1 - 68}){_style(ui, size=40)}}}"
         f"NEXT  {_escape(next_title)}"
     )
-    return "\n".join([now_line, next_line])
+    return "\n".join([plate, now_line, next_line])
 
 
 def _lineup_ass(rows: Sequence[tuple[int, str, str, bool]], ui: UiConfig) -> str:
     """Left-aligned channel list; current row marked with ``>``."""
-    parts: list[str] = []
+    row_h = 46
+    extra = 2  # ^ above and v below
+    plate_h = (max(1, len(rows)) + extra) * row_h + 24
+    parts: list[str] = [
+        _filled_rect(
+            x=_IX0 - 16,
+            y=_IY0 - 16,
+            w=(_IX1 - _IX0) + 32,
+            h=plate_h,
+            fill=_PANEL,
+            fill_alpha=_PANEL_ALPHA,
+        )
+    ]
     y = _IY0
+    parts.append(
+        rf"{{\an7\pos({_IX0},{y}){_style(ui, size=36)}}}^"
+    )
+    y += row_h
     for number, name, title, current in rows:
         mark = ">" if current else " "
         label = f"{mark} CH {number:02d}  {_escape(name)}  {_escape(title)}"
         if len(label) > 56:
             label = label[:55] + "..."
         parts.append(
-            rf"{{\an7\pos({_IX0},{y}){_style(ui, size=32)}}}{label}"
+            rf"{{\an7\pos({_IX0},{y}){_style(ui, size=36)}}}{label}"
         )
-        y += 42
+        y += row_h
+    parts.append(
+        rf"{{\an7\pos({_IX0},{y}){_style(ui, size=36)}}}v"
+    )
     return "\n".join(parts)
 
 
@@ -275,12 +312,17 @@ def _standby_ass(ui: UiConfig) -> str:
     return rf"{{\an5\pos({_FRAME_CX},{CANVAS_H // 2}){_style(ui, size=72)}}}STANDBY"
 
 
-def _filled_rect(*, x: float, y: float, w: float, h: float, fill: str) -> str:
+def _filled_rect(
+    *, x: float, y: float, w: float, h: float, fill: str, fill_alpha: int = 0
+) -> str:
     """An ASS drawing (\\p1) filled rectangle at absolute canvas coordinates."""
     x, y = round(x), round(y)
     w, h = round(w), round(h)
     draw = f"m 0 0 l {w} 0 l {w} {h} l 0 {h}"
-    return rf"{{\an7\pos({x},{y})\p1\c{fill}\1a&H00&\bord0\shad0}}{draw}{{\p0}}"
+    return (
+        rf"{{\an7\pos({x},{y})\p1\c{fill}\1a&H{fill_alpha:02X}&\bord0\blur0\shad0}}"
+        rf"{draw}{{\p0}}"
+    )
 
 
 def _dot(*, cx: float, cy: float, r: float, fill: str) -> str:
