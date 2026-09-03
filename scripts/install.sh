@@ -72,10 +72,11 @@ cat <<EOF
 ==> Done!
 
 Next steps:
-  1. Edit ${REPO_DIR}/config.yaml so the channels point at your show folders.
-  2. Copy your episodes onto the SD card (e.g. under /media/nostalgiabox/<show>/).
-  3. Test it:   nostalgiabox --check
+  1. Confirm the Kingston USB is mounted at /media/kucniadmin/KINGSTON
+     (config.yaml already points mixed.path there).
+  2. Test it:   nostalgiabox --check
                 nostalgiabox                 # starts the TV
+  3. HDMI audio if needed:  nostalgiabox --list-audio
   4. Auto-start on boot:   ./scripts/install.sh --service
 
 Enjoy your nostalgia box!

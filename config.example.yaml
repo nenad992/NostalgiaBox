@@ -12,9 +12,13 @@
 # exist). Home shows only pick where that channel's wheel starts (Stitch on
 # CH1). Shows keep their channel number (sticky).
 # If the pool is empty: empty_channel_message.
+#
+# Pi (this box): Kingston USB auto-mounts at /media/kucniadmin/KINGSTON
+# with one folder per show (Bambi, Lilo&Stitch, …). Tilt on a laptop still
+# uses config.tilt.yaml → dev/media/Sample Channel.
 # -----------------------------------------------------------------------------
 mixed:
-  path: /media/nostalgiabox/pool
+  path: /media/kucniadmin/KINGSTON
   count: 10
   first_number: 1
   name_prefix: Kanal
@@ -36,10 +40,10 @@ empty_channel_message: "Ovaj kanal nema danas crtaća"
 # channels:
 #   - number: 11
 #     name: "Arthur"
-#     path: /media/nostalgiabox/arthur
+#     path: /media/kucniadmin/KINGSTON/Arthur
 
 # Legacy: one channel per sub-folder
-# media_root: /media/nostalgiabox
+# media_root: /media/kucniadmin/KINGSTON
 # first_channel_number: 2
 
 # -----------------------------------------------------------------------------
