@@ -59,7 +59,7 @@ def test_channel_change_now_next_survives_fast_zaps(tmp_path):
     send(app, Action.CHANNEL_UP)
     send(app, Action.CHANNEL_UP)
     assert "NOW" in player.overlays[5] and "NEXT" in player.overlays[5]
-    clock.advance(4.1)
+    clock.advance(5.1)
     app.overlay.tick()
     assert 5 not in player.overlays
 

@@ -275,12 +275,16 @@ def air_order(
     *,
     root: Optional[Path] = None,
     block_size: int = 3,
+    start_key_offset: int = 0,
 ) -> List[Path]:
     """Build a channel playlist: at most ``block_size`` episodes of one show, then another.
 
     Each show's episodes stay in filename order and resume after the break.
     A channel with only one show plays that show straight through.
+    ``start_key_offset`` rotates which show leads so neighbouring channels
+    don't all open on the same franchise.
     """
+    del rng
     groups: Dict[str, List[Path]] = {}
     for path in episodes:
         groups.setdefault(show_key(path, root), []).append(path)
@@ -289,6 +293,9 @@ def air_order(
     keys = sorted(groups)
     if len(keys) <= 1:
         return list(groups[keys[0]]) if keys else []
+    if start_key_offset:
+        rot = start_key_offset % len(keys)
+        keys = keys[rot:] + keys[:rot]
     size = max(1, int(block_size))
     cursor = {key: 0 for key in keys}
     ordered: List[Path] = []
@@ -312,13 +319,11 @@ def mix_slice_target(
     n_files: int,
     n_channels: int,
     *,
-    minimum: int = 20,
+    minimum: int = 3,
 ) -> int:
-    """Max episodes per franchise slice (~even split, at least ``minimum``)."""
-    if n_channels < 1:
-        return max(1, minimum)
-    even = (max(0, n_files) + n_channels - 1) // n_channels
-    return max(1, minimum, even)
+    """Episodes per franchise chunk so every channel can mix several shows."""
+    del n_files, n_channels
+    return max(1, minimum)
 
 
 def _slice_key(franchise: str, index: int) -> str:
@@ -347,6 +352,9 @@ def _migrate_legacy_show_keys(
         del owned[key]
 
 
+_SHOW_MAP_VERSION = 2
+
+
 def load_show_map(path: Optional[Path]) -> Dict[str, int]:
     """Persistent show-key -> channel number (Stitch stays on CH1)."""
     if path is None or not path.is_file():
@@ -355,7 +363,9 @@ def load_show_map(path: Optional[Path]) -> Dict[str, int]:
         data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return {}
-    raw = data.get("shows", data) if isinstance(data, dict) else {}
+    if not isinstance(data, dict) or data.get("version") != _SHOW_MAP_VERSION:
+        return {}
+    raw = data.get("shows", {})
     out: Dict[str, int] = {}
     if isinstance(raw, dict):
         for key, number in raw.items():
@@ -372,7 +382,14 @@ def save_show_map(path: Optional[Path], mapping: Dict[str, int]) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps({"shows": dict(sorted(mapping.items()))}, indent=2) + "\n"
+            json.dumps(
+                {
+                    "version": _SHOW_MAP_VERSION,
+                    "shows": dict(sorted(mapping.items())),
+                },
+                indent=2,
+            )
+            + "\n"
         )
     except OSError:
         log.warning("could not save show map to %s", path, exc_info=True)
@@ -387,11 +404,12 @@ def deal_episodes(
     mapping: Optional[Dict[str, int]] = None,
     channel_numbers: Optional[Sequence[int]] = None,
 ) -> List[List[Path]]:
-    """Deal franchise *slices* onto channels so file counts stay even.
+    """Deal short franchise chunks onto channels so every slot can mix shows.
 
-    Fat shows (more than ~20 episodes) split into ordered slices and may live
-    on several channels (different episodes, never the same file twice).
-    ``mapping`` is updated in place when provided (keys are ``show#slice``).
+    Fat series are split into ordered ~3-episode chunks and spread across
+    channels (different episodes, never the same file twice). Movies (one
+    file) land on the lightest channel. ``mapping`` is updated in place when
+    provided (keys are ``show#slice``).
     """
     del rng  # kept so callers/tests can pass a Random for a stable API
     if n_channels < 1:
@@ -471,13 +489,19 @@ def mixed_playlists(
     """
     del pool  # deal already assigned every pool file into home_buckets
     playlists: List[List[Path]] = []
-    for home in home_buckets:
+    for i, home in enumerate(home_buckets):
         files = list(home)
         if not files:
             playlists.append([])
             continue
         playlists.append(
-            air_order(files, random.Random(0), root=root, block_size=block_size)
+            air_order(
+                files,
+                random.Random(0),
+                root=root,
+                block_size=block_size,
+                start_key_offset=i,
+            )
         )
     return playlists
 

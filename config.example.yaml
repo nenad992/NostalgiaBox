@@ -7,10 +7,10 @@
 #     nostalgiabox --check
 
 # -----------------------------------------------------------------------------
-# Mixed pool: one USB folder, 10 channels. Fat series are split into ordered
-# slices (~20 episodes) so Lilo can live on two channels as *different*
-# episodes. Each file still airs on exactly one channel. Slices are mixed
-# (at most 3 of one show, then another). Empty slots: empty_channel_message.
+# Mixed pool: one USB folder, 10 channels. Fat series are split into short
+# chunks (~3 episodes) and spread so every channel mixes movies + Lilo +
+# Looney (different files, never the same cartoon twice). Playback is at most
+# 3 of one show, then another. Empty slots: empty_channel_message.
 #
 # Pi (this box): Kingston USB auto-mounts at /media/kucniadmin/KINGSTON
 # with one folder per show (Bambi, Lilo&Stitch, …). Tilt on a laptop still
@@ -64,7 +64,7 @@ start_offset: 0
 transition: none
 transition_duration: 0.4
 bridge_seconds: 0.8
-channel_bug_seconds: 4
+channel_bug_seconds: 5
 osd_duration: 2
 
 ui:
@@ -76,7 +76,7 @@ ui:
 crt:
   enabled: true
   curvature: 0.12
-  corner_radius: 0.065
+  corner_radius: 0.085
   vignette: 0.25
   scanlines: false
   scanline_intensity: 0.12

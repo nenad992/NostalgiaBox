@@ -5,8 +5,8 @@ from nostalgiabox.overlay import OverlayManager
 from nostalgiabox.player import MockPlayer
 from tests.helpers import FakeClock, make_show
 
-# OSD uses the full 1280x720 canvas with a 6% safe inset (rounded-corner margin).
-_SAFE_X0, _SAFE_X1 = 76, 1204
+# OSD uses the full 1280x720 canvas with an 8% safe inset (rounded-corner margin).
+_SAFE_X0, _SAFE_X1 = 102, 1178
 
 
 def _all_x_positions(ass: str):
@@ -17,7 +17,7 @@ def _config(tmp_path):
     make_show(tmp_path, "a", 1)
     return config_from_dict(
         {
-            "channel_bug_seconds": 4,
+            "channel_bug_seconds": 5,
             "osd_duration": 2,
             "channels": [{"number": 3, "name": "Arthur", "path": str(tmp_path / "a")}],
         }
@@ -33,14 +33,16 @@ def test_channel_bug_drawn_and_expires(tmp_path):
     assert 1 in player.overlays  # channel overlay id
     ass = player.overlays[1]
     assert "CH 03" in ass and "Arthur" in ass
+    assert "\\fs104" in ass
+    assert "\\fs48" in ass
 
-    clock.advance(3.9)
+    clock.advance(4.9)
     om.tick()
     assert 1 in player.overlays  # not yet expired
 
     clock.advance(0.2)
     om.tick()
-    assert 1 not in player.overlays  # expired after 4s
+    assert 1 not in player.overlays  # expired after 5s
 
 
 def test_volume_overlay_has_label_and_bars(tmp_path):
@@ -131,7 +133,7 @@ def test_guide_sits_above_bottom_safe_edge(tmp_path):
     om = OverlayManager(player, _config(tmp_path), clock=FakeClock())
     om.show_guide("now_file", "next_file")
     ys = [int(m) for m in re.findall(r"\\pos\(\d+,(\d+)\)", player.overlays[5])]
-    inset = int(CANVAS_H * 0.06)
+    inset = int(CANVAS_H * 0.08)
     iy1 = CANVAS_H - inset
     assert ys and min(ys) > inset and max(ys) < iy1
     assert "\\an8" in player.overlays[5]
@@ -145,7 +147,8 @@ def test_guide_shows_now_and_next_and_expires(tmp_path):
     ass = player.overlays[5]
     assert "NOW  stitch_s01e01" in ass
     assert "NEXT  pokemon_s01e02" in ass
-    clock.advance(3.9)
+    assert "\\fs40" in ass
+    clock.advance(4.9)
     om.tick()
     assert 5 in player.overlays
     clock.advance(0.2)
@@ -158,11 +161,11 @@ def test_guide_fast_channel_change_replaces_and_rearms(tmp_path):
     player = MockPlayer()
     om = OverlayManager(player, _config(tmp_path), clock=clock)
     om.show_guide("a", "b")
-    clock.advance(3.0)
+    clock.advance(4.0)
     om.show_guide("c", "d")
     assert "NOW  c" in player.overlays[5]
     assert "NOW  a" not in player.overlays[5]
-    clock.advance(3.9)
+    clock.advance(4.9)
     om.tick()
     assert 5 in player.overlays
     clock.advance(0.2)

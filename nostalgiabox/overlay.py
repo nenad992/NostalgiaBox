@@ -28,7 +28,7 @@ CANVAS_W = 1280
 CANVAS_H = 720
 
 # OSD sits on the full 16:9 canvas, inset so it clears the CRT rounded corners.
-_SAFE = 0.06
+_SAFE = 0.08
 _IX0 = int(CANVAS_W * _SAFE)
 _IX1 = CANVAS_W - int(CANVAS_W * _SAFE)
 _IY0 = int(CANVAS_H * _SAFE)
@@ -167,10 +167,10 @@ def _channel_bug_ass(number: int, name: str, ui: UiConfig) -> str:
     """Green digital 'CH 03' + show name, flashed inside the top-right of the frame."""
     num = f"{number:02d}"
     number_line = (
-        rf"{{\an9\pos({_IX1},{_IY0}){_style(ui, size=88)}}}CH {num}"
+        rf"{{\an9\pos({_IX1},{_IY0}){_style(ui, size=104)}}}CH {num}"
     )
     name_line = (
-        rf"{{\an9\pos({_IX1},{_IY0 + 104}){_style(ui, size=40)}}}{_escape(name)}"
+        rf"{{\an9\pos({_IX1},{_IY0 + 122}){_style(ui, size=48)}}}{_escape(name)}"
     )
     return "\n".join([number_line, name_line])
 
@@ -182,11 +182,11 @@ def _guide_ass(now_title: str, next_title: str, ui: UiConfig) -> str:
     clears the rounded-corner crop — ``\\an2`` at the safe edge sat in the mask.
     """
     now_line = (
-        rf"{{\an8\pos({_FRAME_CX},{_IY1 - 100}){_style(ui, size=32)}}}"
+        rf"{{\an8\pos({_FRAME_CX},{_IY1 - 120}){_style(ui, size=40)}}}"
         f"NOW  {_escape(now_title)}"
     )
     next_line = (
-        rf"{{\an8\pos({_FRAME_CX},{_IY1 - 56}){_style(ui, size=32)}}}"
+        rf"{{\an8\pos({_FRAME_CX},{_IY1 - 68}){_style(ui, size=40)}}}"
         f"NEXT  {_escape(next_title)}"
     )
     return "\n".join([now_line, next_line])

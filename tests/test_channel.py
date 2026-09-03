@@ -336,6 +336,10 @@ def test_air_order_max_three_then_other_show(tmp_path):
     assert shows[:3] == ["Pokemon", "Pokemon", "Pokemon"]
     assert shows[3:6] == ["Stitch", "Stitch", "Stitch"]
     assert "s01e04.mp4" in {p.name for p in order[6:] if p.parent.name == "Pokemon"}
+    rotated = air_order(
+        eps, random.Random(0), root=tmp_path, block_size=3, start_key_offset=1
+    )
+    assert [p.parent.name for p in rotated[:3]] == ["Stitch", "Stitch", "Stitch"]
 
 
 def test_mixed_playlists_keep_every_channel_busy(tmp_path):
@@ -352,14 +356,11 @@ def test_mixed_playlists_keep_every_channel_busy(tmp_path):
     pool = list(stitch.iterdir()) + list(poke.iterdir())
     homes = deal_episodes(pool, 10, random.Random(0), root=tmp_path)
     lists = mixed_playlists(pool, homes, root=tmp_path, block_size=3)
-    stitch_i = next(i for i, h in enumerate(homes) if h and h[0].parent.name == "Stitch")
-    poke_i = next(i for i, h in enumerate(homes) if h and h[0].parent.name == "Pokemon")
-    assert len(lists[stitch_i]) == 5
-    assert len(lists[poke_i]) == 3
-    assert lists[stitch_i][0].parent.name == "Stitch"
-    assert lists[poke_i][0].parent.name == "Pokemon"
-    assert sum(1 for pl in lists if pl) == 2
-    # A file is on exactly one channel — never the same cartoon on two at once.
+    stitch_n = sum(1 for pl in lists for p in pl if p.parent.name == "Stitch")
+    poke_n = sum(1 for pl in lists for p in pl if p.parent.name == "Pokemon")
+    assert stitch_n == 5
+    assert poke_n == 3
+    assert sum(1 for pl in lists if pl) >= 2
     owned = [p.resolve() for pl in lists for p in pl]
     assert len(owned) == len(set(owned)) == 8
 
@@ -611,12 +612,12 @@ def test_flat_mixed_pool_keeps_kanal_channel_names(tmp_path):
     assert "S1E1" not in names
 
 
-def test_mix_slice_target_is_at_least_twenty():
+def test_mix_slice_target_is_a_short_block():
     from nostalgiabox.channel import mix_slice_target
 
-    assert mix_slice_target(197, 10) == 20
-    assert mix_slice_target(400, 10) == 40
-    assert mix_slice_target(8, 10) == 20
+    assert mix_slice_target(197, 10) == 3
+    assert mix_slice_target(400, 10) == 3
+    assert mix_slice_target(8, 10) == 3
 
 
 def test_long_show_is_sliced_across_channels_in_order(tmp_path):
@@ -633,15 +634,15 @@ def test_long_show_is_sliced_across_channels_in_order(tmp_path):
         files, 10, random.Random(0), root=tmp_path, channel_numbers=list(range(1, 11))
     )
     nonempty = [b for b in buckets if b]
-    assert len(nonempty) == 3
-    sizes = sorted(len(b) for b in nonempty)
-    assert sizes == [5, 20, 20]
+    assert len(nonempty) == 10
+    sizes = [len(b) for b in nonempty]
+    assert min(sizes) >= 3
+    assert max(sizes) - min(sizes) <= 3
     owned = [p.resolve() for b in buckets for p in b]
     assert len(owned) == len(set(owned)) == 45
     for bucket in nonempty:
         idxs = [int(p.stem.replace("s01e", "")) for p in bucket]
         assert idxs == sorted(idxs)
-        assert idxs[-1] - idxs[0] + 1 == len(idxs)
 
 
 def test_sliced_channels_stay_near_even_with_one_fat_show(tmp_path):
@@ -665,8 +666,56 @@ def test_sliced_channels_stay_near_even_with_one_fat_show(tmp_path):
     )
     sizes = [len(b) for b in buckets]
     assert min(sizes) >= 1
-    assert max(sizes) - min(sizes) <= 20
+    assert max(sizes) - min(sizes) <= 3
     assert sum(sizes) == 107
     owned = [p.resolve() for b in buckets for p in b]
     assert len(set(owned)) == 107
+    for bucket in buckets:
+        parents = {p.parent.name for p in bucket}
+        assert "Looney" in parents
+    assert any(
+        any(p.parent.name.startswith("Alpha") for p in bucket) for bucket in buckets
+    )
+
+
+def test_every_channel_mixes_series_and_movies(tmp_path):
+    from nostalgiabox.channel import deal_episodes, mixed_playlists, show_key
+
+    files = []
+    for show, n in (("Lilo", 30), ("Looney", 30)):
+        folder = tmp_path / show
+        folder.mkdir()
+        for i in range(1, n + 1):
+            p = folder / f"s01e{i:02d}.mp4"
+            p.write_bytes(b"x")
+            files.append(p)
+    for n in range(10):
+        folder = tmp_path / f"Alpha{n:02d}"
+        folder.mkdir()
+        p = folder / "film.mp4"
+        p.write_bytes(b"x")
+        files.append(p)
+    buckets = deal_episodes(
+        files, 10, random.Random(0), root=tmp_path, channel_numbers=list(range(1, 11))
+    )
+    lists = mixed_playlists(files, buckets, root=tmp_path, block_size=3)
+    for i, (bucket, playlist) in enumerate(zip(buckets, lists)):
+        keys = {show_key(p, tmp_path) for p in bucket}
+        assert "lilo" in keys
+        assert "looney" in keys
+        assert any(k.startswith("alpha") for k in keys)
+        shows = [show_key(p, tmp_path) for p in playlist]
+        run = 1
+        max_run = 1
+        for a, b in zip(shows, shows[1:]):
+            if a == b:
+                run += 1
+                max_run = max(max_run, run)
+            else:
+                run = 1
+        assert max_run <= 3
+        if i:
+            assert shows[0] != [show_key(p, tmp_path) for p in lists[0]][0]
+    owned = [p.resolve() for pl in lists for p in pl]
+    assert len(set(owned)) == 70
 

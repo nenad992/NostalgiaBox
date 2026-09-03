@@ -59,7 +59,7 @@ class CrtConfig:
 
     enabled: bool = True
     curvature: float = 0.12         # barrel "bulge" amount (0 = perfectly flat)
-    corner_radius: float = 0.065    # rounded-corner size (fraction of screen)
+    corner_radius: float = 0.085    # rounded-corner size (fraction of screen)
     vignette: float = 0.25          # darkening toward the edges
     scanlines: bool = True
     scanline_intensity: float = 0.12
@@ -121,7 +121,7 @@ class Config:
     # seconds while the next channel preloads, then cut over (avoids a frozen
     # frame on channel change). 0 = switch immediately.
     bridge_seconds: float = 0.8
-    channel_bug_seconds: float = 4.0      # how long the channel banner lingers
+    channel_bug_seconds: float = 5.0      # how long the channel banner lingers
     osd_duration: float = 2.0             # how long volume/message overlays linger
     ui: UiConfig = field(default_factory=UiConfig)
     crt: CrtConfig = field(default_factory=CrtConfig)
@@ -397,7 +397,7 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
         transition_effect=_valid_transition(data.get("transition", "none")),
         transition_duration=_clamp_float(data.get("transition_duration", 0.4), 0.0, 10.0, "transition_duration"),
         bridge_seconds=_clamp_float(data.get("bridge_seconds", 0.8), 0.0, 10.0, "bridge_seconds"),
-        channel_bug_seconds=_clamp_float(data.get("channel_bug_seconds", 4.0), 0.0, 60.0, "channel_bug_seconds"),
+        channel_bug_seconds=_clamp_float(data.get("channel_bug_seconds", 5.0), 0.0, 60.0, "channel_bug_seconds"),
         osd_duration=_clamp_float(data.get("osd_duration", 2.0), 0.0, 60.0, "osd_duration"),
         ui=_parse_ui(data.get("ui")),
         crt=_parse_crt(data.get("crt")),
