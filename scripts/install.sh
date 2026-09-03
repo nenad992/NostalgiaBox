@@ -40,6 +40,12 @@ pip install --upgrade pip
 # needing to reinstall (just restart the service afterwards).
 pip install -e "${REPO_DIR}[pi]"
 
+NB_BIN="${REPO_DIR}/.venv/bin/nostalgiabox"
+mkdir -p "${HOME}/.local/bin"
+ln -sfn "${NB_BIN}" "${HOME}/.local/bin/nostalgiabox"
+# Current login may not have ~/.local/bin on PATH until next SSH session.
+export PATH="${HOME}/.local/bin:${PATH}"
+
 echo "==> Generating filler assets (static + colour bars)"
 python -m nostalgiabox.static_gen || echo "   (asset generation skipped/failed - box still works)"
 
@@ -59,7 +65,7 @@ if [[ ! -f "${REPO_DIR}/config.yaml" ]]; then
 fi
 
 echo "==> Validating configuration"
-nostalgiabox --check --config "${REPO_DIR}/config.yaml" || \
+"${NB_BIN}" --check --config "${REPO_DIR}/config.yaml" || \
   echo "   (fix config.yaml, then re-run: nostalgiabox --check)"
 
 if [[ "${INSTALL_SERVICE}" -eq 1 ]]; then
@@ -74,8 +80,9 @@ cat <<EOF
 Next steps:
   1. Confirm the Kingston USB is mounted at /media/kucniadmin/KINGSTON
      (config.yaml already points mixed.path there).
-  2. Test it:   nostalgiabox --check
-                nostalgiabox                 # starts the TV
+  2. Test it:   ${HOME}/.local/bin/nostalgiabox --check
+                ${HOME}/.local/bin/nostalgiabox   # starts the TV
+     (or: source ${REPO_DIR}/.venv/bin/activate)
   3. HDMI audio if needed:  nostalgiabox --list-audio
   4. Auto-start on boot:   ./scripts/install.sh --service
 
