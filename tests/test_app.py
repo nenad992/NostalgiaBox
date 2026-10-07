@@ -115,10 +115,11 @@ def test_lineup_back_dismisses_without_tuning(tmp_path):
 
 
 
-def test_arrows_do_not_change_channel_until_ok_list_is_open(tmp_path):
+def test_arrows_zap_when_ok_list_is_closed(tmp_path):
     app, player, _ = build_app(tmp_path, bridge_seconds=0)
     app.start()
     send(app, Action.CURSOR_UP)
+    assert app.lineup.current.number == 3
     send(app, Action.CURSOR_DOWN)
     assert app.lineup.current.number == 2
     send(app, Action.CHANNEL_UP)

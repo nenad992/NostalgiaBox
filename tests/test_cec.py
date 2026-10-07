@@ -68,8 +68,8 @@ def test_phys_addr_from_cec_ctl():
     assert _phys_addr_from_cec_ctl("nope") is None
 
 
-def test_cec_ctl_identity_asks_tv_to_forward_channel_keys():
+def test_cec_ctl_identity_is_playback_not_tuner():
     args = cec_ctl_identity_args("NostalgiaBox")
-    assert "--tuner" in args
-    assert "--playback" not in args
+    assert "--playback" in args
+    assert "--tuner" not in args
     assert "--osd-name=NostalgiaBox" in args

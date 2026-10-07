@@ -100,8 +100,8 @@ input:
   keyboard: true
   cec: true
   stdin: false
-  # Fox: CH+/CH- zap channels; D-pad arrows only move the OK list.
-  # HDMI-CEC tuner role (not playback) so Fox forwards CH+/−.
+  # FOX 32ATV141D: analog CH+/− stay on the TV. D-pad zaps when the OK list
+  # is closed, and only moves the highlight when the list is open.
   # Laptop / Tilt only. Leave off on the Pi.
   # dev_http: false
   # dev_http_port: 8765

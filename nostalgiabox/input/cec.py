@@ -25,14 +25,13 @@ log = logging.getLogger(__name__)
 
 
 def cec_ctl_identity_args(osd_name: str) -> list[str]:
-    """Claim the tuner address so the TV forwards CH+/CH-.
+    """Playback device: Fox forwards D-pad/OK; tuner-only made the remote die.
 
-    This adapter allows only one logical address. Playback (a streaming stick)
-    makes Fox keep Channel +/− for its own tuner. Tuner is the set-top-box
-    role, which is what gets those keys.
+    This adapter allows one logical address. Fox never sent CH+/CH- in either
+    role; playback is the one that actually delivers keys.
     """
     name = (osd_name or "NostalgiaBox")[:14]
-    return ["--tuner", f"--osd-name={name}"]
+    return ["--playback", f"--osd-name={name}"]
 
 
 def claim_kernel_cec(
@@ -43,7 +42,7 @@ def claim_kernel_cec(
     """Name the Pi on the TV and claim active source without locking /dev/cec.
 
     ``cec-client`` exclusive-opens the adapter (so kernel RC dies). ``cec-ctl``
-    can set tuner + OSD name and send ACTIVE_SOURCE, then exit.
+    can set playback + OSD name and send ACTIVE_SOURCE, then exit.
     """
     if shutil.which("cec-ctl") is None:
         log.info("cec-ctl not found; HDMI device name stays at kernel default")
@@ -69,27 +68,11 @@ def claim_kernel_cec(
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        log.warning("cec-ctl tuner setup failed: %s", exc)
+        log.warning("cec-ctl playback setup failed: %s", exc)
         return
     if info.returncode != 0:
-        log.warning(
-            "cec-ctl tuner failed, trying playback: %s",
-            (info.stderr or info.stdout)[:300],
-        )
-        try:
-            info = subprocess.run(
-                ["cec-ctl", "-d", device, "--playback", f"--osd-name={name}"],
-                capture_output=True,
-                text=True,
-                timeout=8,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            log.warning("cec-ctl playback setup failed: %s", exc)
-            return
-        if info.returncode != 0:
-            log.warning("cec-ctl playback failed: %s", (info.stderr or info.stdout)[:300])
-            return
+        log.warning("cec-ctl playback failed: %s", (info.stderr or info.stdout)[:300])
+        return
     phys = _phys_addr_from_cec_ctl(info.stdout)
     if phys is None:
         phys = _phys_addr_from_cec_ctl(
@@ -202,7 +185,7 @@ class CecBackend(InputBackend):
             return
         cmd = [
             self._binary,
-            "-t", "pt",           # Playback + Tuner so CH+/CH- are forwarded
+            "-t", "p",             # Playback: this Fox TV only forwards keys in that role
             "-o", self._osd_name,
             "-d", "8",            # include key-press / traffic lines
             *self._extra_args,

@@ -284,10 +284,16 @@ class TVApp:
         self._zap_channel(-1)
 
     def _cursor_up(self) -> None:
-        self._move_lineup_cursor(+1)
+        if self.overlay.lineup_active():
+            self._move_lineup_cursor(+1)
+        else:
+            self._zap_channel(+1)
 
     def _cursor_down(self) -> None:
-        self._move_lineup_cursor(-1)
+        if self.overlay.lineup_active():
+            self._move_lineup_cursor(-1)
+        else:
+            self._zap_channel(-1)
 
     def _move_lineup_cursor(self, direction: int) -> None:
         if not self.overlay.lineup_active():
