@@ -115,7 +115,7 @@ def test_ui_and_crt_defaults(tmp_path):
     assert cfg.bridge_seconds == 0.8
     assert cfg.fullscreen is True  # Pi / TV default; Tilt sets false
     assert cfg.empty_channel_message == "Ovaj kanal nema danas crtaća"
-    assert cfg.hdmi_idle_pause_seconds == 600.0
+    assert cfg.hdmi_idle_pause_seconds == 60.0
     assert cfg.show_block_episodes == 3
     assert cfg.library_rescan_hour == 4
 

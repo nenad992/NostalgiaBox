@@ -148,7 +148,7 @@ class Config:
     fullscreen: bool = True
 
     # Seconds of HDMI-down before stop(); 0 = never. Broadcast clock still runs.
-    hdmi_idle_pause_seconds: float = 600.0
+    hdmi_idle_pause_seconds: float = 60.0
 
     # Sticky show -> channel map (JSON). None = do not persist.
     state_path: Optional[Path] = None
@@ -412,7 +412,7 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
         input_options=dict(data.get("input") or {}),
         fullscreen=bool(data.get("fullscreen", True)),
         hdmi_idle_pause_seconds=_clamp_float(
-            data.get("hdmi_idle_pause_seconds", 600.0), 0.0, 86400.0, "hdmi_idle_pause_seconds"
+            data.get("hdmi_idle_pause_seconds", 60.0), 0.0, 86400.0, "hdmi_idle_pause_seconds"
         ),
         state_path=_optional_state_path(data.get("state_path"), base_dir),
         show_block_episodes=_clamp_int(

@@ -89,9 +89,11 @@ audio_device: "alsa/hdmi:CARD=vc4hdmi0,DEV=0"
 
 power_off_on_min_volume: false
 
-# Stop playing files after HDMI has been down this many seconds (TV off).
-# 0 = never. The broadcast clock still advances; wake retunes to "what's on now".
-hdmi_idle_pause_seconds: 600
+# Stop playing files this many seconds after the TV goes off (HDMI unplugged,
+# or the TV reports standby over HDMI-CEC). 0 = never. The broadcast clock still
+# advances; when the TV is back on, the Pi grabs the HDMI input and retunes to
+# "what's on now".
+hdmi_idle_pause_seconds: 60
 
 scan_recursive: true
 # shuffle_seed: 1234

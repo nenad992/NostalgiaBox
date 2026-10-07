@@ -139,11 +139,11 @@ def test_info_shows_this_channel_now_next_not_full_lineup(tmp_path):
 
 
 def test_enter_still_confirms_typed_channel(tmp_path):
-    app, player, _ = build_app(tmp_path)
+    app, player, _ = build_app(tmp_path, channels=_ten_channel_lineup(tmp_path))
     app.start()
-    send(app, Action.DIGIT, 4)
+    send(app, Action.DIGIT, 1)
     send(app, Action.ENTER)
-    assert app.lineup.current.number == 4
+    assert app.lineup.current.number == 1
     assert 6 not in player.overlays
 
 
@@ -247,22 +247,22 @@ def test_mute_toggle_and_unmute_on_volume(tmp_path):
 
 
 def test_direct_channel_entry_with_enter(tmp_path):
-    app, player, _ = build_app(tmp_path)
+    app, player, _ = build_app(tmp_path, channels=_ten_channel_lineup(tmp_path))
     app.start()
-    send(app, Action.DIGIT, 4)
-    assert app.lineup.current.number == 2  # not committed yet
+    send(app, Action.DIGIT, 1)
+    assert app.lineup.current.number == 2  # not committed yet (could be 10)
     send(app, Action.ENTER)
-    assert app.lineup.current.number == 4
+    assert app.lineup.current.number == 1
 
 
 def test_direct_channel_entry_times_out(tmp_path):
-    app, player, clock = build_app(tmp_path)
+    app, player, clock = build_app(tmp_path, channels=_ten_channel_lineup(tmp_path))
     app.start()
-    send(app, Action.DIGIT, 3)
+    send(app, Action.DIGIT, 1)
     assert app.lineup.current.number == 2
     clock.advance(2.1)  # past the entry timeout
     app.step()
-    assert app.lineup.current.number == 3
+    assert app.lineup.current.number == 1
 
 
 def test_invalid_channel_entry_shows_message(tmp_path):
@@ -273,19 +273,34 @@ def test_invalid_channel_entry_shows_message(tmp_path):
     assert app.lineup.current.number == 2  # unchanged
 
 
+def _ten_channel_lineup(tmp_path):
+    names = ["dragon", "arthur", "rugrats"]
+    return [
+        {"number": n, "name": f"Ch {n}", "path": str(tmp_path / names[n % 3])}
+        for n in range(1, 11)
+    ]
+
+
 def test_channel_entry_is_two_digits_and_11_is_no_channel(tmp_path):
-    app, player, _ = build_app(tmp_path)
+    app, player, _ = build_app(tmp_path, channels=_ten_channel_lineup(tmp_path))
     app.start()
     send(app, Action.DIGIT, 1)
-    assert "CH 1_" in player.overlays.get(4, "")
+    assert "CH 1_" in player.overlays.get(4, "")  # could still become 10
     send(app, Action.DIGIT, 1)
-    assert app.lineup.current.number == 2
-    assert "NO CHANNEL" in player.overlays.get(4, "")
-    send(app, Action.DIGIT, 4)
-    send(app, Action.DIGIT, 4)
     assert app.lineup.current.number == 2
     assert "NO CHANNEL" in player.overlays.get(4, "")
     assert app._digit_buffer == ""
+
+
+def test_digit_that_cannot_start_a_longer_number_tunes_at_once(tmp_path):
+    app, player, _ = build_app(tmp_path, channels=_ten_channel_lineup(tmp_path))
+    app.start()
+    send(app, Action.DIGIT, 4)
+    assert app.lineup.current.number == 4  # no 2 s wait: no channel 40-49
+    assert app._digit_buffer == ""
+    send(app, Action.DIGIT, 1)
+    send(app, Action.DIGIT, 0)
+    assert app.lineup.current.number == 10
 
 
 def test_last_channel_jump(tmp_path):
@@ -651,15 +666,17 @@ def test_empty_channel_message_clears_when_leaving(tmp_path):
     assert 4 not in app.player.overlays
 
 
-def test_channel_banner_deferred_until_switch(tmp_path):
+def test_channel_banner_shows_at_once_during_bridge(tmp_path):
     app, player, clock = build_app(tmp_path, bridge_seconds=0.8)
     app.start()
     player.overlays.pop(1, None)          # clear the power-on banner
+    first = player.current
     send(app, Action.CHANNEL_UP)
-    assert 1 not in player.overlays       # banner NOT shown during the bridge
+    assert "CH 03" in player.overlays.get(1, "")  # instant feedback on the press
+    assert player.current == first        # picture still bridging
     clock.advance(1.0)
-    app.step()                            # cut-over happens here
-    assert "CH 03" in player.overlays.get(1, "")  # banner appears at the switch
+    app.step()
+    assert player.current != first
 
 
 def test_resume_mode_restarts_where_left(tmp_path):

@@ -27,7 +27,7 @@ from typing import Callable, Optional
 from .actions import Action, InputEvent
 from .channel import Channel, ChannelLineup, PlayRequest, build_lineup
 from .config import Config
-from .hdmi import hdmi_signal_present
+from .hdmi import TvPowerWatcher, hdmi_signal_present, tv_signal
 from .input.manager import InputManager, create_backends
 from .overlay import OverlayManager
 from .player import END_EOF, END_ERROR, MockPlayer, Player
@@ -73,6 +73,7 @@ class TVApp:
         self.hdmi_idle = False
         self._hdmi_lost_at: Optional[float] = None
         self._hdmi_signal = hdmi_signal_present
+        self._tv_power: Optional[TvPowerWatcher] = None
         self._media_present = self._library_present()
         self._media_fp = self._library_fingerprint()
         self._playing_path: Optional[Path] = None
@@ -89,8 +90,6 @@ class TVApp:
         # then cut to the channel that was preloaded. The channel banner is shown
         # at the moment of the cut-over, not when the button is pressed.
         self._switch_deadline: Optional[float] = None
-        self._pending_banner: Optional[tuple[int, str]] = None
-        self._pending_request: Optional[PlayRequest] = None
 
         # Playback-finished events from the player (may arrive on any thread).
         self._ended: "queue.Queue[str]" = queue.Queue()
@@ -155,7 +154,13 @@ class TVApp:
                 backends = create_backends(config.input_options)
             input_manager = InputManager(backends)
 
-        return cls(config, player, input_manager, assets_dir=assets_dir)
+        app = cls(config, player, input_manager, assets_dir=assets_dir)
+        if not dry_run and config.hdmi_idle_pause_seconds > 0 and TvPowerWatcher.is_available():
+            from .input.cec import announce_active_source
+
+            app._tv_power = TvPowerWatcher(on_wake=announce_active_source)
+            app._hdmi_signal = tv_signal(hdmi_signal_present, app._tv_power)
+        return app
 
     # -- lifecycle ----------------------------------------------------------
     def start(self) -> None:
@@ -163,6 +168,8 @@ class TVApp:
         self.player.set_volume(self.volume)
         self.player.set_mute(self.muted)
         self.input.start()
+        if self._tv_power is not None:
+            self._tv_power.start()
         self._select_start_channel()
         self.tune_current(show_static=False)
 
@@ -191,6 +198,8 @@ class TVApp:
         except Exception:  # noqa: BLE001
             pass
         self.input.stop()
+        if self._tv_power is not None:
+            self._tv_power.stop()
         self.player.close()
 
     # -- main-loop step (small and testable) --------------------------------
@@ -230,13 +239,6 @@ class TVApp:
         if self._switch_deadline is not None and now >= self._switch_deadline:
             self._switch_deadline = None
             self.player.commit_switch()
-            # Flash the channel banner right as the picture actually changes.
-            if self._pending_banner is not None:
-                self.overlay.show_channel_bug(*self._pending_banner)
-                if self._pending_request is not None:
-                    self._flash_guide(self.lineup.current, self._pending_request)
-                self._pending_banner = None
-                self._pending_request = None
 
     # -- input handling -----------------------------------------------------
     def handle_event(self, event: InputEvent) -> None:
@@ -356,8 +358,6 @@ class TVApp:
         self.overlay.clear_message()
 
         request = channel.tune_in()
-        self._pending_banner = None
-        self._pending_request = None
 
         if request is None:
             # No episodes on this channel: show the "no signal" screen.
@@ -387,12 +387,12 @@ class TVApp:
             )
         elif self.config.bridge_seconds > 0 and self._playing_path is not None:
             # No transition effect: keep the current show playing while the next
-            # channel preloads, then cut over (no frozen frame). The banner is
-            # shown at the cut-over (see _maybe_commit_switch), not right now.
+            # channel preloads, then cut over (no frozen frame). The banner shows
+            # right away so the remote press feels instant.
+            if show_osd:
+                self._flash_tune_osd(channel, request)
             self._playing_path = request.path
             self.player.preload_next(request.path, start=request.start)
-            self._pending_request = request
-            self._pending_banner = (channel.number, channel.name) if show_osd else None
             self._switch_deadline = self._clock() + self.config.bridge_seconds
         else:
             self._switch_deadline = None
@@ -415,8 +415,6 @@ class TVApp:
 
     def _show_no_signal(self, channel: Channel) -> None:
         self._switch_deadline = None
-        self._pending_banner = None
-        self._pending_request = None
         self._playing_path = None
         if self._colorbars_path is not None:
             self.player.play_loop(self._colorbars_path)
@@ -444,8 +442,6 @@ class TVApp:
         log.info("powering off (volume floor)")
         self.powered_off = True
         self._switch_deadline = None
-        self._pending_banner = None
-        self._pending_request = None
         try:
             self.overlay.clear_all()
             self.overlay.show_message("GOODBYE", duration=0)
@@ -484,8 +480,6 @@ class TVApp:
         if self.standby:
             self._remember_position()
             self._switch_deadline = None
-            self._pending_banner = None
-            self._pending_request = None
             self.player.stop()
             self.overlay.clear_all()
             self.overlay.show_standby()
@@ -519,8 +513,6 @@ class TVApp:
     def _enter_hdmi_idle(self) -> None:
         self.hdmi_idle = True
         self._switch_deadline = None
-        self._pending_banner = None
-        self._pending_request = None
         self._playing_path = None
         self.player.stop()
         self.overlay.clear_all()
@@ -541,8 +533,16 @@ class TVApp:
         self._digit_buffer += str(digit)
         self._digit_deadline = self._clock() + self._digit_entry_timeout
         self.overlay.show_message(f"CH {self._digit_buffer}_", duration=self._digit_entry_timeout)
-        if len(self._digit_buffer) >= 2:
+        if len(self._digit_buffer) >= 2 or not self._digits_could_continue():
             self._confirm_digits()
+
+    def _digits_could_continue(self) -> bool:
+        """True if some two-digit channel starts with what was typed so far."""
+        prefix = self._digit_buffer
+        return any(
+            len(str(n)) > len(prefix) and str(n).startswith(prefix)
+            for n in self.lineup.numbers
+        )
 
     def _confirm_digits(self) -> None:
         if not self._digit_buffer:

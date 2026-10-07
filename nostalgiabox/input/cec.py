@@ -110,6 +110,35 @@ def claim_kernel_cec(
     log.info("HDMI-CEC: OSD name %r, active source %s", name, phys or "?")
 
 
+def announce_active_source(device: str = "/dev/cec0") -> None:
+    """Ask a TV that just turned on to switch to the Pi's HDMI input."""
+    if shutil.which("cec-ctl") is None:
+        return
+    try:
+        info = subprocess.run(
+            ["cec-ctl", "-d", device], capture_output=True, text=True, timeout=5, check=False
+        )
+        phys = _phys_addr_from_cec_ctl(info.stdout)
+        if not phys:
+            return
+        subprocess.run(
+            ["cec-ctl", "-d", device, "--to", "0", "--image-view-on"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        subprocess.run(
+            ["cec-ctl", "-d", device, "--active-source", f"phys-addr={phys}"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("cec-ctl active-source failed: %s", exc)
+        return
+    log.info("HDMI-CEC: TV back on, claimed active source %s", phys)
+
+
 def _phys_addr_from_cec_ctl(text: str) -> Optional[str]:
     match = re.search(r"Physical Address\s*:\s*([0-9a-fA-F]+\.[0-9a-fA-F]+\.[0-9a-fA-F]+\.[0-9a-fA-F]+)", text)
     return match.group(1) if match else None
@@ -251,5 +280,6 @@ __all__ = [
     "CecBackend",
     "parse_cec_line",
     "claim_kernel_cec",
+    "announce_active_source",
     "cec_ctl_identity_args",
 ]
