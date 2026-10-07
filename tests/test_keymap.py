@@ -13,7 +13,9 @@ from nostalgiabox.input.keymap import (
 def test_evdev_channel_and_volume():
     assert evdev_key_to_event("KEY_CHANNELUP").action == Action.CHANNEL_UP
     assert evdev_key_to_event("KEY_PAGEUP").action == Action.CHANNEL_UP
-    assert evdev_key_to_event("KEY_UP").action == Action.CHANNEL_UP
+    assert evdev_key_to_event("KEY_UP").action == Action.CURSOR_UP
+    assert evdev_key_to_event("KEY_DOWN").action == Action.CURSOR_DOWN
+    assert evdev_key_to_event("KEY_CHANNELDOWN").action == Action.CHANNEL_DOWN
     assert evdev_key_to_event("KEY_VOLUMEDOWN").action == Action.VOLUME_DOWN
     assert evdev_key_to_event("KEY_LEFT") is None
     assert evdev_key_to_event("KEY_RIGHT") is None
@@ -47,8 +49,8 @@ def test_stdin_chars():
 
 
 def test_stdin_arrows():
-    assert stdin_escape_to_event("[A").action == Action.CHANNEL_UP
-    assert stdin_escape_to_event("[B").action == Action.CHANNEL_DOWN
+    assert stdin_escape_to_event("[A").action == Action.CURSOR_UP
+    assert stdin_escape_to_event("[B").action == Action.CURSOR_DOWN
     assert stdin_escape_to_event("[C") is None
     assert stdin_escape_to_event("[D") is None
     assert stdin_escape_to_event("[Z") is None

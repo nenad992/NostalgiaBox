@@ -256,6 +256,8 @@ class TVApp:
         handlers = {
             Action.CHANNEL_UP: self._channel_up,
             Action.CHANNEL_DOWN: self._channel_down,
+            Action.CURSOR_UP: self._cursor_up,
+            Action.CURSOR_DOWN: self._cursor_down,
             Action.VOLUME_UP: self._volume_up,
             Action.VOLUME_DOWN: self._volume_down,
             Action.MUTE: self._toggle_mute,
@@ -272,25 +274,37 @@ class TVApp:
 
     # -- channel changing ---------------------------------------------------
     def _channel_up(self) -> None:
-        self._step_channel(+1)
+        if self.overlay.lineup_active():
+            self._dismiss_lineup()
+        self._zap_channel(+1)
 
     def _channel_down(self) -> None:
-        self._step_channel(-1)
-
-    def _step_channel(self, direction: int) -> None:
         if self.overlay.lineup_active():
-            numbers = self.lineup.numbers
-            if not numbers:
-                return
-            current = self._lineup_cursor
-            if current not in numbers:
-                current = self.lineup.current.number
-            index = numbers.index(current)
-            # List is CH1 at the top: remote UP (-index) / DOWN (+index).
-            index = (index - direction) % len(numbers)
-            self._lineup_cursor = numbers[index]
-            self._show_lineup()
+            self._dismiss_lineup()
+        self._zap_channel(-1)
+
+    def _cursor_up(self) -> None:
+        self._move_lineup_cursor(+1)
+
+    def _cursor_down(self) -> None:
+        self._move_lineup_cursor(-1)
+
+    def _move_lineup_cursor(self, direction: int) -> None:
+        if not self.overlay.lineup_active():
             return
+        numbers = self.lineup.numbers
+        if not numbers:
+            return
+        current = self._lineup_cursor
+        if current not in numbers:
+            current = self.lineup.current.number
+        index = numbers.index(current)
+        # List is CH1 at the top: remote UP (-index) / DOWN (+index).
+        index = (index - direction) % len(numbers)
+        self._lineup_cursor = numbers[index]
+        self._show_lineup()
+
+    def _zap_channel(self, direction: int) -> None:
         self._remember_position()
         self._last_channel_number = self.lineup.current.number
         if direction > 0:

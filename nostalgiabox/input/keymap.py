@@ -22,14 +22,14 @@ from ..actions import Action, InputEvent
 # Linux evdev key names -> InputEvent
 # --------------------------------------------------------------------------
 _EVDEV_ACTIONS: Dict[str, InputEvent] = {
-    # Channel changing. Dedicated channel keys, page keys, and the D-pad all
-    # work so almost any remote can drive it.
+    # Channel keys (CH+/CH-) change the TV channel. D-pad up/down only move
+    # the OK-list cursor — Fox and similar remotes send those as KEY_UP/DOWN.
     "KEY_CHANNELUP": InputEvent(Action.CHANNEL_UP),
     "KEY_PAGEUP": InputEvent(Action.CHANNEL_UP),
-    "KEY_UP": InputEvent(Action.CHANNEL_UP),
     "KEY_CHANNELDOWN": InputEvent(Action.CHANNEL_DOWN),
     "KEY_PAGEDOWN": InputEvent(Action.CHANNEL_DOWN),
-    "KEY_DOWN": InputEvent(Action.CHANNEL_DOWN),
+    "KEY_UP": InputEvent(Action.CURSOR_UP),
+    "KEY_DOWN": InputEvent(Action.CURSOR_DOWN),
     # Volume.
     "KEY_VOLUMEUP": InputEvent(Action.VOLUME_UP),
     "KEY_EQUAL": InputEvent(Action.VOLUME_UP),
@@ -78,6 +78,8 @@ def evdev_key_to_event(key_name: str) -> Optional[InputEvent]:
 _ACTION_BY_NAME: Dict[str, InputEvent] = {
     "channel_up": InputEvent(Action.CHANNEL_UP),
     "channel_down": InputEvent(Action.CHANNEL_DOWN),
+    "cursor_up": InputEvent(Action.CURSOR_UP),
+    "cursor_down": InputEvent(Action.CURSOR_DOWN),
     "volume_up": InputEvent(Action.VOLUME_UP),
     "volume_down": InputEvent(Action.VOLUME_DOWN),
     "mute": InputEvent(Action.MUTE),
@@ -177,13 +179,13 @@ def stdin_escape_to_event(seq: str) -> Optional[InputEvent]:
 # --------------------------------------------------------------------------
 # Names as emitted by libCEC / `cec-client` "key pressed:" lines.
 _CEC_ACTIONS: Dict[str, InputEvent] = {
-    "up": InputEvent(Action.CHANNEL_UP),
+    "up": InputEvent(Action.CURSOR_UP),
     "channel up": InputEvent(Action.CHANNEL_UP),
     "channel-up": InputEvent(Action.CHANNEL_UP),
     "ch up": InputEvent(Action.CHANNEL_UP),
     "ch+": InputEvent(Action.CHANNEL_UP),
     "page up": InputEvent(Action.CHANNEL_UP),
-    "down": InputEvent(Action.CHANNEL_DOWN),
+    "down": InputEvent(Action.CURSOR_DOWN),
     "channel down": InputEvent(Action.CHANNEL_DOWN),
     "channel-down": InputEvent(Action.CHANNEL_DOWN),
     "ch down": InputEvent(Action.CHANNEL_DOWN),

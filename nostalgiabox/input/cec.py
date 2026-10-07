@@ -104,8 +104,8 @@ _USER_CTRL_RE = re.compile(
 # HDMI-CEC User Control operand -> action (CEC 1.4 table).
 _CEC_OPERANDS: Dict[int, InputEvent] = {
     0x00: InputEvent(Action.ENTER),
-    0x01: InputEvent(Action.CHANNEL_UP),
-    0x02: InputEvent(Action.CHANNEL_DOWN),
+    0x01: InputEvent(Action.CURSOR_UP),
+    0x02: InputEvent(Action.CURSOR_DOWN),
     0x0D: InputEvent(Action.LAST_CHANNEL),
     0x30: InputEvent(Action.CHANNEL_UP),
     0x31: InputEvent(Action.CHANNEL_DOWN),

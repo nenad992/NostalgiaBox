@@ -19,6 +19,8 @@ def test_cec_named_keys():
 
 def test_parse_cec_client_key_pressed_line():
     ev = parse_cec_line("DEBUG:   key pressed: up (1)")
+    assert ev is not None and ev.action == Action.CURSOR_UP
+    ev = parse_cec_line("DEBUG:   key pressed: channel up (48)")
     assert ev is not None and ev.action == Action.CHANNEL_UP
     assert parse_cec_line("TRAFFIC: [123] key pressed: volume up (41)") is None
     assert parse_cec_line("key released: up (1)") is None
@@ -27,7 +29,9 @@ def test_parse_cec_client_key_pressed_line():
 def test_parse_cec_user_control_pressed_hex():
     # User Control Pressed (0x44) + Up (0x01), Down (0x02), Volume Up (0x41)
     ev = parse_cec_line("TRAFFIC: [  12345]	>> 01:44:01")
-    assert ev is not None and ev.action == Action.CHANNEL_UP
+    assert ev is not None and ev.action == Action.CURSOR_UP
+    ev = parse_cec_line(">> 01:44:02")
+    assert ev is not None and ev.action == Action.CURSOR_DOWN
     ev = parse_cec_line(">> 01:44:30")  # Channel Up
     assert ev is not None and ev.action == Action.CHANNEL_UP
     ev = parse_cec_line(">> 01:44:31")  # Channel Down

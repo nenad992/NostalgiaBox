@@ -198,6 +198,8 @@ class KeyboardBackend(InputBackend):
             Action.VOLUME_DOWN,
             Action.CHANNEL_UP,
             Action.CHANNEL_DOWN,
+            Action.CURSOR_UP,
+            Action.CURSOR_DOWN,
         ):
             return
         self.emit(input_event)

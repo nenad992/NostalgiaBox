@@ -19,6 +19,8 @@ class Action(Enum):
 
     CHANNEL_UP = auto()
     CHANNEL_DOWN = auto()
+    CURSOR_UP = auto()      # D-pad: browse the OK list only
+    CURSOR_DOWN = auto()
     VOLUME_UP = auto()
     VOLUME_DOWN = auto()
     MUTE = auto()

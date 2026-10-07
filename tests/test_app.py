@@ -92,7 +92,7 @@ def test_lineup_arrows_browse_then_ok_tunes(tmp_path):
     send(app, Action.ENTER)
     assert app.lineup.current.number == 2
     clock.advance(3.0)
-    send(app, Action.CHANNEL_DOWN)
+    send(app, Action.CURSOR_DOWN)
     assert app.lineup.current.number == 2
     listing = player.overlays[6]
     assert "> CH 03" in listing
@@ -108,11 +108,21 @@ def test_lineup_back_dismisses_without_tuning(tmp_path):
     app, player, _ = build_app(tmp_path, bridge_seconds=0)
     app.start()
     send(app, Action.ENTER)
-    send(app, Action.CHANNEL_DOWN)
+    send(app, Action.CURSOR_DOWN)
     send(app, Action.LAST_CHANNEL)
     assert 6 not in player.overlays
     assert app.lineup.current.number == 2
 
+
+
+def test_arrows_do_not_change_channel_until_ok_list_is_open(tmp_path):
+    app, player, _ = build_app(tmp_path, bridge_seconds=0)
+    app.start()
+    send(app, Action.CURSOR_UP)
+    send(app, Action.CURSOR_DOWN)
+    assert app.lineup.current.number == 2
+    send(app, Action.CHANNEL_UP)
+    assert app.lineup.current.number == 3
 
 
 def test_info_shows_this_channel_now_next_not_full_lineup(tmp_path):
