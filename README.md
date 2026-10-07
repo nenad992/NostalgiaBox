@@ -269,26 +269,65 @@ the card. (To update later, disable the overlay, update, then re-enable it.)
 
 | Do this | On the remote |
 |---------|---------------|
-| Change channels | Channel up / down (TV remote over CEC) |
+| Change channels | Channel up / down (TV remote over CEC). If your TV keeps CH+/− for itself, use **Up / Down** |
+| Pick from the channel list | **OK** opens it, arrows move, **OK** tunes, OK/Back closes |
+| Type a channel | Digits (2–9 tune at once; **1** waits a moment in case you mean 10) |
 | Adjust volume / mute | The TV's own volume buttons |
 | Standby (blank screen) | Power |
 
-Changing channel flashes **NOW** and **NEXT** at the bottom (the file names)
-for a few seconds. Zap quickly and it just updates; it does not stick around.
+Changing channel shows the channel banner plus **NOW** and **NEXT** (the file
+names) the moment you press; the old show keeps playing for a split second
+while the new one loads. Zap quickly and it just updates.
 
-If the TV is off (HDMI link down) for 10 minutes, playback **stops** so the Pi
-is not decoding cartoons into a black screen. Turn the TV back on to that HDMI
-and it joins the last channel **where that station would be now**.
+Some TVs never forward CH+/CH− over HDMI-CEC (the FOX 32ATV141D / "S2-Tek"
+chassis keeps them, whatever role the Pi claims). Check with
+`sudo cec-ctl -d /dev/cec0 -m` while pressing keys: what does not show up there
+never reaches the Pi. A USB or GPIO IR receiver is the way around that.
 
-Cartoons live on the USB (or SD) folder in `mixed.path`. Unplug it and the box
-rescans (empty channels until it is back). Plug it in again and the same shows
-stay on the same channel numbers. Every mixed channel airs the **whole library**
-(starting with that channel’s home show), so a short list does not go blank
-while another channel is still running. If every channel already has a home
-show, extra series are packed onto a channel so **every file still airs**. A
-channel with more than one show plays **at most three episodes** of one series,
-then something else, then comes back. New files are picked up when a channel
-finishes its last episode and loops, or as soon as the drive returns.
+When the TV goes to standby (it reports this over HDMI-CEC; many TVs keep the
+HDMI link "connected" in standby) or the cable is unplugged, playback **stops**
+after `hdmi_idle_pause_seconds` (60 s) so the Pi is not decoding cartoons into a
+dark screen. Turn the TV back on and the Pi switches it to its HDMI input and
+joins the last channel **where that station would be now**.
+
+Cartoons live on the USB (or SD) folder in `mixed.path`, one folder per show.
+Unplug it and the box rescans (empty channels until it is back). Plug it in
+again and the same shows stay on the same channel numbers. Every mixed channel
+airs the **whole library** (starting with that channel’s home show), so a short
+list does not go blank while another channel is still running. New shows are
+split into 3-episode chunks and dealt onto the channels with the fewest
+episodes, so **every file still airs** and existing shows keep their channels.
+A channel with more than one show plays **at most three episodes** of one
+series, then something else, then comes back.
+
+New, changed or deleted files are picked up while it runs: the drive is checked
+every 5 seconds, and a file airs once it has not changed for 30 seconds (so a
+half-copied episode never plays). The picture you are watching keeps going if
+its file is still there. A 04:00 rescan (`library_rescan_hour`) is a backup.
+
+### Adding videos over Wi-Fi (no unplugging)
+
+Share the drive with Samba so it opens in Finder / Explorer:
+
+```bash
+sudo apt install -y samba
+sudo tee -a /etc/samba/smb.conf <<'CONF'
+
+[NostalgiaBox]
+   path = /media/YOUR_USER/KINGSTON
+   valid users = YOUR_USER
+   force user = YOUR_USER
+   read only = no
+   # macOS litter (._ files end in .mp4 too)
+   veto files = /._*/.DS_Store/
+   delete veto files = yes
+CONF
+sudo smbpasswd -a YOUR_USER     # Samba has its own password
+sudo systemctl restart smbd
+```
+
+On a Mac: Finder → Go → Connect to Server (⌘K) → `smb://PI_IP/NostalgiaBox`.
+Drag show folders in; they are on air about half a minute after the copy ends.
 
 Turn it on by plugging in power; it boots back to a channel automatically.
 
