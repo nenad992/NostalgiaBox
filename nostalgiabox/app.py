@@ -530,9 +530,13 @@ class TVApp:
 
     # -- direct channel entry ----------------------------------------------
     def _push_digit(self, digit: int) -> None:
-        self._digit_buffer = (self._digit_buffer + str(digit))[-3:]
+        if len(self._digit_buffer) >= 2:
+            self._digit_buffer = ""
+        self._digit_buffer += str(digit)
         self._digit_deadline = self._clock() + self._digit_entry_timeout
         self.overlay.show_message(f"CH {self._digit_buffer}_", duration=self._digit_entry_timeout)
+        if len(self._digit_buffer) >= 2:
+            self._confirm_digits()
 
     def _confirm_digits(self) -> None:
         if not self._digit_buffer:

@@ -24,6 +24,17 @@ from .keymap import cec_key_to_event
 log = logging.getLogger(__name__)
 
 
+def cec_ctl_identity_args(osd_name: str) -> list[str]:
+    """Advertise playback (arrows/OK) and tuner (CH+/CH-) to the TV.
+
+    Playback-only is what a streaming stick looks like: Fox and similar TVs
+    keep Channel +/− for their own tuner and only forward the D-pad. Adding
+    tuner asks the TV to send CH+/CH- to the Pi as well.
+    """
+    name = (osd_name or "NostalgiaBox")[:14]
+    return ["--playback", "--tuner", f"--osd-name={name}"]
+
+
 def claim_kernel_cec(
     *,
     device: str = "/dev/cec0",
@@ -32,26 +43,43 @@ def claim_kernel_cec(
     """Name the Pi on the TV and claim active source without locking /dev/cec.
 
     ``cec-client`` exclusive-opens the adapter (so kernel RC dies). ``cec-ctl``
-    can set playback + OSD name and send ACTIVE_SOURCE, then exit.
+    can set playback + tuner + OSD name and send ACTIVE_SOURCE, then exit.
     """
     if shutil.which("cec-ctl") is None:
         log.info("cec-ctl not found; HDMI device name stays at kernel default")
         return
     name = (osd_name or "NostalgiaBox")[:14]
+    identity = ["cec-ctl", "-d", device, *cec_ctl_identity_args(osd_name)]
     try:
         info = subprocess.run(
-            ["cec-ctl", "-d", device, "--playback", f"--osd-name={name}"],
+            identity,
             capture_output=True,
             text=True,
             timeout=8,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        log.warning("cec-ctl playback setup failed: %s", exc)
+        log.warning("cec-ctl playback+tuner setup failed: %s", exc)
         return
     if info.returncode != 0:
-        log.warning("cec-ctl playback failed: %s", (info.stderr or info.stdout)[:300])
-        return
+        log.warning(
+            "cec-ctl playback+tuner failed, trying playback only: %s",
+            (info.stderr or info.stdout)[:300],
+        )
+        try:
+            info = subprocess.run(
+                ["cec-ctl", "-d", device, "--playback", f"--osd-name={name}"],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            log.warning("cec-ctl playback setup failed: %s", exc)
+            return
+        if info.returncode != 0:
+            log.warning("cec-ctl playback failed: %s", (info.stderr or info.stdout)[:300])
+            return
     phys = _phys_addr_from_cec_ctl(info.stdout)
     if phys is None:
         phys = _phys_addr_from_cec_ctl(
@@ -106,11 +134,15 @@ _CEC_OPERANDS: Dict[int, InputEvent] = {
     0x00: InputEvent(Action.ENTER),
     0x01: InputEvent(Action.CURSOR_UP),
     0x02: InputEvent(Action.CURSOR_DOWN),
+    0x09: InputEvent(Action.INFO),  # Root Menu — Fox Info on some remotes
+    0x0A: InputEvent(Action.INFO),  # Setup Menu
+    0x0B: InputEvent(Action.INFO),  # Contents Menu
     0x0D: InputEvent(Action.LAST_CHANNEL),
     0x30: InputEvent(Action.CHANNEL_UP),
     0x31: InputEvent(Action.CHANNEL_DOWN),
     0x32: InputEvent(Action.LAST_CHANNEL),
-    0x35: InputEvent(Action.INFO),
+    0x35: InputEvent(Action.INFO),  # Display Information
+    0x36: InputEvent(Action.INFO),  # Help
     0x40: InputEvent(Action.POWER),
 }
 for _d in range(10):
@@ -160,7 +192,7 @@ class CecBackend(InputBackend):
             return
         cmd = [
             self._binary,
-            "-t", "p",            # register as a Playback device
+            "-t", "pt",           # Playback + Tuner so CH+/CH- are forwarded
             "-o", self._osd_name,
             "-d", "8",            # include key-press / traffic lines
             *self._extra_args,
@@ -222,4 +254,9 @@ class CecBackend(InputBackend):
         self._proc = None
 
 
-__all__ = ["CecBackend", "parse_cec_line", "claim_kernel_cec"]
+__all__ = [
+    "CecBackend",
+    "parse_cec_line",
+    "claim_kernel_cec",
+    "cec_ctl_identity_args",
+]

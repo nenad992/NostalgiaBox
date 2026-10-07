@@ -272,6 +272,21 @@ def test_invalid_channel_entry_shows_message(tmp_path):
     assert app.lineup.current.number == 2  # unchanged
 
 
+def test_channel_entry_is_two_digits_and_11_is_no_channel(tmp_path):
+    app, player, _ = build_app(tmp_path)
+    app.start()
+    send(app, Action.DIGIT, 1)
+    assert "CH 1_" in player.overlays.get(4, "")
+    send(app, Action.DIGIT, 1)
+    assert app.lineup.current.number == 2
+    assert "NO CHANNEL" in player.overlays.get(4, "")
+    send(app, Action.DIGIT, 4)
+    send(app, Action.DIGIT, 4)
+    assert app.lineup.current.number == 2
+    assert "NO CHANNEL" in player.overlays.get(4, "")
+    assert app._digit_buffer == ""
+
+
 def test_last_channel_jump(tmp_path):
     app, player, _ = build_app(tmp_path)
     app.start()

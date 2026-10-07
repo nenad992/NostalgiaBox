@@ -187,6 +187,23 @@ class KeyboardBackend(InputBackend):
         if key_name is None:
             return
         input_event = self._lookup(key_name)
+        if event.value == _KEY_DOWN:
+            if input_event is None:
+                log.info("remote unmapped %s", key_name)
+            elif key_name in (
+                "KEY_UP",
+                "KEY_DOWN",
+                "KEY_CHANNELUP",
+                "KEY_CHANNELDOWN",
+                "KEY_PAGEUP",
+                "KEY_PAGEDOWN",
+                "KEY_INFO",
+                "KEY_EPG",
+                "KEY_MENU",
+                "KEY_HOME",
+                "KEY_HELP",
+            ):
+                log.info("remote %s -> %s", key_name, input_event.action.name)
         if input_event is None:
             return
         # Only volume/channel keys should auto-repeat when held; ignore repeats

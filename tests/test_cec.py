@@ -1,5 +1,5 @@
 from nostalgiabox.actions import Action
-from nostalgiabox.input.cec import parse_cec_line
+from nostalgiabox.input.cec import cec_ctl_identity_args, parse_cec_line
 from nostalgiabox.input.keymap import cec_key_to_event
 
 
@@ -14,6 +14,9 @@ def test_cec_named_keys():
     assert cec_key_to_event("power").action == Action.POWER
     assert cec_key_to_event("page up").action == Action.CHANNEL_UP
     assert cec_key_to_event("ch down").action == Action.CHANNEL_DOWN
+    assert cec_key_to_event("help").action == Action.INFO
+    assert cec_key_to_event("root menu").action == Action.INFO
+    assert cec_key_to_event("contents menu").action == Action.INFO
     assert cec_key_to_event("nonsense") is None
 
 
@@ -47,6 +50,14 @@ def test_parse_cec_user_control_pressed_hex():
     assert parse_cec_line(">> 01:45:01") is None  # released
     ev = parse_cec_line(">> 0f:44:20")
     assert ev is not None and ev.value == 0
+    ev = parse_cec_line(">> 01:44:09")  # Root Menu (Fox Info on some TVs)
+    assert ev is not None and ev.action == Action.INFO
+    ev = parse_cec_line(">> 01:44:0a")  # Setup Menu
+    assert ev is not None and ev.action == Action.INFO
+    ev = parse_cec_line(">> 01:44:0b")  # Contents Menu
+    assert ev is not None and ev.action == Action.INFO
+    ev = parse_cec_line(">> 01:44:36")  # Help
+    assert ev is not None and ev.action == Action.INFO
 
 
 def test_phys_addr_from_cec_ctl():
@@ -55,3 +66,10 @@ def test_phys_addr_from_cec_ctl():
     text = "	Physical Address           : 3.0.0.0\n	OSD Name                   : 'NostalgiaBox'\n"
     assert _phys_addr_from_cec_ctl(text) == "3.0.0.0"
     assert _phys_addr_from_cec_ctl("nope") is None
+
+
+def test_cec_ctl_identity_asks_tv_to_forward_channel_keys():
+    args = cec_ctl_identity_args("NostalgiaBox")
+    assert "--playback" in args
+    assert "--tuner" in args
+    assert "--osd-name=NostalgiaBox" in args

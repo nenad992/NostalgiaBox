@@ -100,6 +100,8 @@ input:
   keyboard: true
   cec: true
   stdin: false
+  # Fox: CH+/CH- zap channels; D-pad arrows only move the OK list.
+  # The Pi also advertises itself as a tuner so Fox forwards CH+/−.
   # Laptop / Tilt only. Leave off on the Pi.
   # dev_http: false
   # dev_http_port: 8765

@@ -39,6 +39,24 @@ def test_evdev_unknown_key():
     assert evdev_key_to_event("KEY_FLIBBERTIGIBBET") is None
 
 
+def test_evdev_fox_info_aliases():
+    for key in (
+        "KEY_INFO",
+        "KEY_EPG",
+        "KEY_GUIDE",
+        "KEY_HELP",
+        "KEY_MENU",
+        "KEY_HOME",
+        "KEY_SETUP",
+        "KEY_CONTEXT_MENU",
+        "KEY_PROGRAM",
+        "KEY_TEXT",
+        "KEY_DISPLAYTOGGLE",
+        "KEY_OSD",
+    ):
+        assert evdev_key_to_event(key).action == Action.INFO, key
+
+
 def test_stdin_chars():
     assert stdin_char_to_event("+").action == Action.VOLUME_UP
     assert stdin_char_to_event("-").action == Action.VOLUME_DOWN
