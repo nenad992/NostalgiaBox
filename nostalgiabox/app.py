@@ -40,6 +40,11 @@ from .static_gen import (
 
 log = logging.getLogger(__name__)
 
+# How often to look for new/removed files on the USB drive, and how long a file
+# must sit unchanged before it airs (so half-copied Wi-Fi uploads never play).
+LIBRARY_SCAN_SECONDS = 5.0
+LIBRARY_SETTLE_SECONDS = 30.0
+
 
 class TVApp:
     """The retro-TV application state machine."""
@@ -76,6 +81,8 @@ class TVApp:
         self._tv_power: Optional[TvPowerWatcher] = None
         self._media_present = self._library_present()
         self._media_fp = self._library_fingerprint()
+        self._next_library_scan = 0.0
+        self._file_time: Callable[[], float] = time.time
         self._playing_path: Optional[Path] = None
         self._last_channel_number: Optional[int] = None
         self._running = False
@@ -605,7 +612,11 @@ class TVApp:
     def _advance_current(self) -> None:
         channel = self.lineup.current
         current = self._playing_path
-        if current is not None and channel.ends_cycle(current):
+        if (
+            current is not None
+            and channel.ends_cycle(current)
+            and not self._library_settling(self._library_fingerprint())
+        ):
             self._refresh_library()
             channel = self.lineup.current
         if current is not None:
@@ -650,11 +661,26 @@ class TVApp:
         items.sort()
         return (True, tuple(items))
 
+    def _library_settling(self, fingerprint: tuple) -> bool:
+        """True while some video file was written in the last few seconds."""
+        if len(fingerprint) < 2:
+            return False
+        cutoff = self._file_time() - LIBRARY_SETTLE_SECONDS
+        return any(mtime > cutoff for _path, mtime, _size in fingerprint[1])
+
     def _tick_library(self) -> None:
         present = self._library_present()
+        if present == self._media_present:
+            # USB plug/unplug is checked every step; the full file walk is not.
+            now = self._clock()
+            if now < self._next_library_scan:
+                return
+            self._next_library_scan = now + LIBRARY_SCAN_SECONDS
         fingerprint = self._library_fingerprint()
         if present == self._media_present and fingerprint == self._media_fp:
             return
+        if present and self._media_present and self._library_settling(fingerprint):
+            return  # a copy is still running; pick it up once files stop changing
         was_present = self._media_present
         self._media_present = present
         self._media_fp = fingerprint

@@ -1,4 +1,5 @@
 import pytest
+import time
 from datetime import datetime
 
 from nostalgiabox.actions import Action, InputEvent
@@ -470,6 +471,7 @@ def test_finishing_last_episode_picks_up_new_file(tmp_path, monkeypatch):
     player = MockPlayer()
     app = TVApp(config, player, InputManager([]), clock=FakeClock())
     app.start()
+    app._file_time = _copy_finished
     (show / "s01e02.mp4").write_bytes(b"x")
     player.finish_current(END_EOF)
     app._drain_playback_events()
@@ -509,6 +511,7 @@ def test_usb_files_appear_without_unplugging(tmp_path):
         config, player, InputManager([]), clock=FakeClock(), wall_clock=wall
     )
     app.start()
+    app._file_time = _copy_finished
     playing = player.current
     assert playing is not None
     (show / "s01e02.mp4").write_bytes(b"x")
@@ -550,6 +553,7 @@ def test_new_usb_files_appear_while_hdmi_is_live(tmp_path):
     )
     app._hdmi_signal = lambda: True
     app.start()
+    app._file_time = _copy_finished
     (show / "s01e02.mp4").write_bytes(b"x")
     app.step()
     names = {p.name for c in app.lineup for p in c.episodes}
@@ -689,3 +693,58 @@ def test_resume_mode_restarts_where_left(tmp_path):
     send(app, Action.CHANNEL_DOWN)  # back to ch 2 -> resume at 42
     assert player.current == playing
     assert player.played[-1] == (playing, 42.0)
+
+
+def _copy_finished():
+    """File clock a minute ahead: files written by the test count as settled."""
+    return time.time() + 60
+
+
+def _mixed_usb_app(tmp_path):
+    pool = tmp_path / "usb"
+    show = pool / "Stitch"
+    show.mkdir(parents=True)
+    (show / "s01e01.mp4").write_bytes(b"x")
+    config = config_from_dict(
+        {
+            "mixed": {"path": str(pool), "count": 10, "first_number": 1},
+            "state_path": str(tmp_path / "map.json"),
+            "start_channel": 1,
+            "tune_in": "broadcast",
+            "start_offset": 0,
+            "bridge_seconds": 0,
+            "power_off_command": [],
+        }
+    )
+    clock = FakeClock()
+    app = TVApp(config, MockPlayer(), InputManager([]), clock=clock)
+    app.start()
+    return app, show, clock
+
+
+def _aired(app):
+    return {p.name for c in app.lineup for p in c.episodes}
+
+
+def test_file_still_being_copied_does_not_air_until_it_settles(tmp_path):
+    app, show, clock = _mixed_usb_app(tmp_path)
+    (show / "s01e02.mp4").write_bytes(b"half")   # mtime = now: copy in progress
+    clock.advance(10)
+    app.step()
+    assert "s01e02.mp4" not in _aired(app)
+    app._file_time = _copy_finished              # quiet for 30s+
+    clock.advance(10)
+    app.step()
+    assert "s01e02.mp4" in _aired(app)
+
+
+def test_library_walk_runs_every_few_seconds_not_every_step(tmp_path):
+    app, show, clock = _mixed_usb_app(tmp_path)
+    app._file_time = _copy_finished
+    app.step()                                   # first scan right away
+    (show / "s01e02.mp4").write_bytes(b"x")
+    app.step()
+    assert "s01e02.mp4" not in _aired(app)       # within the 5s scan interval
+    clock.advance(5)
+    app.step()
+    assert "s01e02.mp4" in _aired(app)
