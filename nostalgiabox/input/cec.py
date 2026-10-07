@@ -25,14 +25,14 @@ log = logging.getLogger(__name__)
 
 
 def cec_ctl_identity_args(osd_name: str) -> list[str]:
-    """Advertise playback (arrows/OK) and tuner (CH+/CH-) to the TV.
+    """Claim the tuner address so the TV forwards CH+/CH-.
 
-    Playback-only is what a streaming stick looks like: Fox and similar TVs
-    keep Channel +/− for their own tuner and only forward the D-pad. Adding
-    tuner asks the TV to send CH+/CH- to the Pi as well.
+    This adapter allows only one logical address. Playback (a streaming stick)
+    makes Fox keep Channel +/− for its own tuner. Tuner is the set-top-box
+    role, which is what gets those keys.
     """
     name = (osd_name or "NostalgiaBox")[:14]
-    return ["--playback", "--tuner", f"--osd-name={name}"]
+    return ["--tuner", f"--osd-name={name}"]
 
 
 def claim_kernel_cec(
@@ -43,12 +43,22 @@ def claim_kernel_cec(
     """Name the Pi on the TV and claim active source without locking /dev/cec.
 
     ``cec-client`` exclusive-opens the adapter (so kernel RC dies). ``cec-ctl``
-    can set playback + tuner + OSD name and send ACTIVE_SOURCE, then exit.
+    can set tuner + OSD name and send ACTIVE_SOURCE, then exit.
     """
     if shutil.which("cec-ctl") is None:
         log.info("cec-ctl not found; HDMI device name stays at kernel default")
         return
     name = (osd_name or "NostalgiaBox")[:14]
+    try:
+        subprocess.run(
+            ["cec-ctl", "-d", device, "--clear"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
     identity = ["cec-ctl", "-d", device, *cec_ctl_identity_args(osd_name)]
     try:
         info = subprocess.run(
@@ -59,11 +69,11 @@ def claim_kernel_cec(
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        log.warning("cec-ctl playback+tuner setup failed: %s", exc)
+        log.warning("cec-ctl tuner setup failed: %s", exc)
         return
     if info.returncode != 0:
         log.warning(
-            "cec-ctl playback+tuner failed, trying playback only: %s",
+            "cec-ctl tuner failed, trying playback: %s",
             (info.stderr or info.stdout)[:300],
         )
         try:
