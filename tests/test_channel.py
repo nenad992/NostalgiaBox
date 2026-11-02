@@ -719,3 +719,88 @@ def test_every_channel_mixes_series_and_movies(tmp_path):
     owned = [p.resolve() for pl in lists for p in pl]
     assert len(set(owned)) == 70
 
+
+
+def _mixed_show_files(tmp_path, shows=6, per_show=3):
+    pool = tmp_path / "pool"
+    for s in range(shows):
+        folder = pool / f"Show{chr(65 + s)}"
+        folder.mkdir(parents=True)
+        for e in range(1, per_show + 1):
+            (folder / f"s01e{e:02d}.mp4").write_bytes(b"x")
+    return pool, scan_episodes(pool, [".mp4"])
+
+
+def test_broadcast_epoch_is_fixed_not_midnight(tmp_path):
+    from nostalgiabox.channel import broadcast_anchor
+
+    pool, _ = _mixed_show_files(tmp_path)
+    cfg = config_from_dict(
+        {
+            "mixed": {"path": str(pool), "count": 2, "first_number": 1},
+            "state_path": str(tmp_path / "map.json"),
+            "tune_in": "broadcast",
+        }
+    )
+    a = build_lineup(cfg).current._broadcast_epoch
+    b = build_lineup(cfg).current._broadcast_epoch
+    assert a == b == broadcast_anchor()
+
+
+def test_cycle_shuffler_reshuffles_each_pass_and_keeps_rules(tmp_path):
+    from nostalgiabox.channel import cycle_shuffler, show_key
+
+    pool, eps = _mixed_show_files(tmp_path, shows=6, per_show=5)
+    order = cycle_shuffler(eps, root=pool, block_size=3, salt="1")
+    passes = [order(k) for k in range(6)]
+    for p in passes:
+        assert sorted(p) == sorted(eps)  # every file once per pass
+        keys = [show_key(x, pool) for x in p]
+        run = 1
+        for prev, cur in zip(keys, keys[1:]):
+            run = run + 1 if cur == prev else 1
+            assert run <= 3
+        for k in set(keys):  # each show in episode order
+            mine = [x.name for x in p if show_key(x, pool) == k]
+            assert mine == sorted(mine)
+    assert len({tuple(p) for p in passes}) > 1
+    assert order(3) == cycle_shuffler(eps, root=pool, block_size=3, salt="1")(3)
+    for k in range(1, 6):  # no show straddles the pass boundary
+        assert show_key(passes[k - 1][-1], pool) != show_key(passes[k][0], pool)
+
+
+def test_broadcast_same_time_next_day_differs(tmp_path, monkeypatch):
+    import nostalgiabox.channel as channel_mod
+    from nostalgiabox.config import ChannelConfig
+
+    monkeypatch.setattr(channel_mod, "probe_duration", lambda p: 1500.0)
+    pool, eps = _mixed_show_files(tmp_path, shows=8, per_show=6)  # 20 h
+    ch = Channel(
+        ChannelConfig(number=1, name="K", path=pool),
+        eps,
+        tune_in="broadcast",
+        broadcast_epoch=0.0,
+        show_root=pool,
+    )
+    at_18h = [ch.tune_in(now=d * 86400 + 18 * 3600).path for d in range(5)]
+    assert len(set(at_18h)) > 1
+
+
+def test_broadcast_eof_crosses_into_next_pass(tmp_path, monkeypatch):
+    import nostalgiabox.channel as channel_mod
+    from nostalgiabox.config import ChannelConfig
+
+    monkeypatch.setattr(channel_mod, "probe_duration", lambda p: 100.0)
+    pool, eps = _mixed_show_files(tmp_path, shows=4, per_show=3)
+    ch = Channel(
+        ChannelConfig(number=1, name="K", path=pool),
+        eps,
+        tune_in="broadcast",
+        broadcast_epoch=0.0,
+        show_root=pool,
+    )
+    sched = ch._ensure_broadcast(epoch=0.0)
+    cycle = 100.0 * len(eps)
+    last = sched.order(0)[-1]
+    assert sched.next_path(last, now=cycle) == sched.order(1)[0]
+    assert sched.at(cycle + 1).path == sched.order(1)[0]
