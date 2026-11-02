@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
-from typing import AbstractSet, Dict, List, Optional, Sequence
+from typing import AbstractSet, Callable, Dict, List, Optional, Sequence
 
 _SEASON_EPISODE = (
     re.compile(r"s(\d{1,2})[ ._-]?e(\d{1,3})", re.IGNORECASE),
@@ -152,8 +152,10 @@ class BroadcastSchedule:
 
     Given episode durations and a fixed start epoch, it can report exactly what
     "would be airing" at any wall-clock moment - the illusion that the station
-    kept broadcasting while nobody was watching. Episodes air in show order
-    (see :func:`air_order`) and the list loops forever.
+    kept broadcasting while nobody was watching. Every file airs once per
+    cycle. ``order_for_cycle(k)`` may return a different running order for
+    each pass ``k`` (same files, so the cycle length never changes); without
+    it the given order simply loops forever.
     """
 
     def __init__(
@@ -163,29 +165,65 @@ class BroadcastSchedule:
         *,
         epoch: float,
         rng: random.Random | None = None,
+        order_for_cycle: Optional[Callable[[int], List[Path]]] = None,
     ) -> None:
         if len(episodes) != len(durations):
             raise ValueError("episodes and durations must be the same length")
         self._episodes = list(episodes)
         self._durations = [max(1.0, float(d)) for d in durations]
+        self._duration_of = dict(zip(self._episodes, self._durations))
         self._epoch = epoch
         self._cycle = sum(self._durations)
+        self._order_for_cycle = order_for_cycle
+        self._orders: Dict[int, List[Path]] = {}
+
+    def cycle_index(self, when: float) -> int:
+        return int((when - self._epoch) // self._cycle)
+
+    def order(self, cycle: int) -> List[Path]:
+        """Running order for pass ``cycle`` (cached; a few passes at most)."""
+        if self._order_for_cycle is None:
+            return self._episodes
+        cached = self._orders.get(cycle)
+        if cached is None:
+            if len(self._orders) > 8:
+                self._orders.clear()
+            cached = self._orders[cycle] = self._order_for_cycle(cycle)
+        return cached
 
     def at(self, when: float) -> PlayRequest:
         """What is airing at wall-clock time ``when`` (and how far into it)."""
+        order = self.order(self.cycle_index(when))
         elapsed = (when - self._epoch) % self._cycle
-        for path, dur in zip(self._episodes, self._durations):
+        for path in order:
+            dur = self._duration_of[path]
             if elapsed < dur:
                 return PlayRequest(path=path, start=elapsed)
             elapsed -= dur
         # Floating point rounding safety net.
-        return PlayRequest(path=self._episodes[-1], start=0.0)
+        return PlayRequest(path=order[-1], start=0.0)
 
-    def next_path(self, current: Path) -> Path:
-        i = _index_of_path(self._episodes, current)
+    def _cycle_of_current(self, current: Path, now: float) -> int:
+        """Pass that ``current`` belongs to: judged from its midpoint, since
+        on EOF it started roughly one episode-length ago."""
+        dur = self._duration_of.get(current, 0.0)
+        return self.cycle_index(now - dur / 2)
+
+    def next_path(self, current: Path, *, now: Optional[float] = None) -> Path:
+        now = time.time() if now is None else now
+        cycle = self._cycle_of_current(current, now)
+        order = self.order(cycle)
+        i = _index_of_path(order, current)
         if i < 0:
-            return self._episodes[0]
-        return self._episodes[(i + 1) % len(self._episodes)]
+            return order[0]
+        if i == len(order) - 1:
+            return self.order(cycle + 1)[0]
+        return order[i + 1]
+
+    def paths_around(self, current: Path, *, now: Optional[float] = None) -> List[Path]:
+        """The running order of the pass ``current`` is airing in."""
+        now = time.time() if now is None else now
+        return list(self.order(self._cycle_of_current(current, now)))
 
 
 def _index_of_path(ordered: Sequence[Path], current: Path) -> int:
@@ -285,17 +323,30 @@ def air_order(
     don't all open on the same franchise.
     """
     del rng
-    groups: Dict[str, List[Path]] = {}
-    for path in episodes:
-        groups.setdefault(show_key(path, root), []).append(path)
-    for key in groups:
-        groups[key] = sorted(groups[key], key=episode_sort_key)
+    groups = _show_groups(episodes, root)
     keys = sorted(groups)
     if len(keys) <= 1:
         return list(groups[keys[0]]) if keys else []
     if start_key_offset:
         rot = start_key_offset % len(keys)
         keys = keys[rot:] + keys[:rot]
+    return _interleave(groups, keys, block_size)
+
+
+def _show_groups(episodes: Sequence[Path], root: Optional[Path]) -> Dict[str, List[Path]]:
+    """Episodes grouped by show, each group in filename (episode) order."""
+    groups: Dict[str, List[Path]] = {}
+    for path in episodes:
+        groups.setdefault(show_key(path, root), []).append(path)
+    for key in groups:
+        groups[key] = sorted(groups[key], key=episode_sort_key)
+    return groups
+
+
+def _interleave(
+    groups: Dict[str, List[Path]], keys: Sequence[str], block_size: int
+) -> List[Path]:
+    """Round-robin ``block_size`` episodes of each show, in ``keys`` order."""
     size = max(1, int(block_size))
     cursor = {key: 0 for key in keys}
     ordered: List[Path] = []
@@ -313,6 +364,44 @@ def air_order(
         if not progressed:
             break
     return ordered
+
+
+def cycle_shuffler(
+    episodes: Sequence[Path],
+    *,
+    root: Optional[Path],
+    block_size: int,
+    salt: str,
+) -> Callable[[int], List[Path]]:
+    """Per-pass running orders: show blocks reshuffled every cycle.
+
+    Same rules as :func:`air_order` (at most ``block_size`` of one show in a
+    row, each show in episode order) but the order of shows changes on every
+    pass. Seeded by ``salt`` + pass number, so a rebuild (04:00 rescan) of an
+    unchanged library reproduces the same schedule instead of jumping.
+    """
+    groups = _show_groups(episodes, root)
+    base = sorted(groups)
+    key_of = {path: key for key, files in groups.items() for path in files}
+
+    def shuffled_keys(cycle: int) -> List[str]:
+        material = f"{salt}|{cycle}|cycle-order".encode()
+        seed = int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+        keys = list(base)
+        random.Random(seed).shuffle(keys)
+        return keys
+
+    def order(cycle: int) -> List[Path]:
+        keys = shuffled_keys(cycle)
+        if len(keys) > 1:
+            # Don't open a pass with the show that closed the previous one
+            # (that could put up to 2 x block_size of it back to back).
+            prev_last = key_of[_interleave(groups, shuffled_keys(cycle - 1), block_size)[-1]]
+            if keys[0] == prev_last:
+                keys[0], keys[1] = keys[1], keys[0]
+        return _interleave(groups, keys, block_size)
+
+    return order
 
 
 def mix_slice_target(
@@ -532,6 +621,16 @@ def start_of_local_day(when: Optional[float] = None) -> float:
     return dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
+def broadcast_anchor() -> float:
+    """Fixed broadcast clock epoch (local midnight, 1 Jan 2024).
+
+    Never moves, so the station keeps running across days and rebuilds. A
+    midnight-of-today epoch would replay the same timetable every day and
+    never reach files past the first 24 h of a channel's running order.
+    """
+    return datetime(2024, 1, 1).timestamp()
+
+
 class Channel:
     """A single TV channel backed by a folder of episodes."""
 
@@ -546,8 +645,10 @@ class Channel:
         rng: Optional[random.Random] = None,
         broadcast_epoch: Optional[float] = None,
         show_block_episodes: int = 3,
+        show_root: Optional[Path] = None,
     ) -> None:
         self.config = config
+        self._show_root = show_root
         self.episodes: List[Path] = list(episodes)
         self.tune_in_mode = tune_in
         # Start each episode a random number of seconds in (within this range) so
@@ -658,28 +759,31 @@ class Channel:
 
     def guide_filenames(self, playing: Path) -> tuple[str, str]:
         """NOW / NEXT file names for the bottom OSD, from this channel's air order."""
-        paths = self.air_paths() or list(self.episodes)
+        paths = self.air_paths(playing) or list(self.episodes)
         if not paths:
             return playing.name, playing.name
         i = _index_of_path(paths, playing)
         if i < 0:
             now, nxt = playing, paths[0]
         else:
-            now, nxt = paths[i], paths[(i + 1) % len(paths)]
+            now, nxt = paths[i], self.next_path(paths[i])
         return now.stem, nxt.stem
 
-    def air_paths(self) -> List[Path]:
+    def air_paths(self, current: Optional[Path] = None) -> List[Path]:
+        """Running order of the pass now airing (or the pass ``current`` is in)."""
         if self.tune_in_mode == "broadcast":
             epoch = self._broadcast_epoch if self._broadcast_epoch is not None else time.time()
             sched = self._ensure_broadcast(epoch=epoch)
             if sched is not None:
-                return list(sched._episodes)
+                if current is not None:
+                    return sched.paths_around(current)
+                return list(sched.order(sched.cycle_index(time.time())))
         if self.is_empty:
             return []
         return list(self.episodes)
 
     def ends_cycle(self, current: Path) -> bool:
-        paths = self.air_paths()
+        paths = self.air_paths(current)
         return bool(paths) and _index_of_path(paths, current) == len(paths) - 1
 
     def play_after(self, current: Path) -> Optional[PlayRequest]:
@@ -702,7 +806,16 @@ class Channel:
             dur = probe_duration(path)
             durations.append(dur if dur else DEFAULT_EPISODE_SECONDS)
         self._broadcast = BroadcastSchedule(
-            ordered, durations, epoch=use_epoch, rng=self._rng
+            ordered,
+            durations,
+            epoch=use_epoch,
+            rng=self._rng,
+            order_for_cycle=cycle_shuffler(
+                ordered,
+                root=self._show_root,
+                block_size=self._block_size,
+                salt=f"{self.number}",
+            ),
         )
         return self._broadcast
 
@@ -790,7 +903,7 @@ def build_lineup(
         mixed_deal_seed(config.shuffle_seed, today.isoformat())
     )
     broadcast_epoch = (
-        start_of_local_day() if config.tune_in == "broadcast" else None
+        broadcast_anchor() if config.tune_in == "broadcast" else None
     )
 
     dedicated_cfgs = [c for c in config.channels if not c.from_pool]
@@ -826,7 +939,12 @@ def build_lineup(
             )
         channels.append(
             _make_channel(
-                config, ch_cfg, episodes, index=i, broadcast_epoch=broadcast_epoch
+                config,
+                ch_cfg,
+                episodes,
+                index=i,
+                broadcast_epoch=broadcast_epoch,
+                show_root=ch_cfg.path,
             )
         )
 
@@ -879,6 +997,7 @@ def build_lineup(
                     episodes,
                     index=1000 + i,
                     broadcast_epoch=broadcast_epoch,
+                    show_root=pool_root,
                 )
             )
 
@@ -892,6 +1011,7 @@ def _make_channel(
     *,
     index: int,
     broadcast_epoch: Optional[float],
+    show_root: Optional[Path] = None,
 ) -> Channel:
     if config.shuffle_seed is not None:
         ch_rng = random.Random(channel_rng_seed(config.shuffle_seed, ch_cfg.number, index))
@@ -906,6 +1026,7 @@ def _make_channel(
         rng=ch_rng,
         broadcast_epoch=broadcast_epoch,
         show_block_episodes=config.show_block_episodes,
+        show_root=show_root,
     )
 
 
@@ -928,5 +1049,7 @@ __all__ = [
     "load_show_map",
     "save_show_map",
     "start_of_local_day",
+    "broadcast_anchor",
+    "cycle_shuffler",
     "build_lineup",
 ]
